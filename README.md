@@ -20,6 +20,14 @@ The current UI uses mock data so you can preview the full experience immediately
 - Public visitor: homepage, rooms, food timetable, notices, contact, Magneetoz promo.
 - Admin: dashboard stats, new admission, fee update, notice management, complaint resolution, room management.
 - Student: profile, fee summary, notices, complaint submission, food timetable.
+- Magneetoz: separate offer manager for restaurant banner, coupon, title, description, image, and enable/disable.
+
+Magneetoz login:
+
+```text
+magneetoz73@gmail.com
+LURlum8423@
+```
 
 ## Firebase Setup
 

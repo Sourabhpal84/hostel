@@ -56,4 +56,11 @@ rahul@student.com
 123456
 ```
 
+Magneetoz offer manager:
+
+```text
+magneetoz73@gmail.com
+LURlum8423@
+```
+
 The current app is deploy-ready and works immediately with browser storage. Firebase files and rules are included so the next upgrade can replace browser storage with real shared Firestore persistence without changing the UI.

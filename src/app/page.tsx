@@ -51,7 +51,7 @@ export default function Home() {
 
   useEffect(() => {
     const saved = window.localStorage.getItem("premiumPgStore");
-    if (saved) setStore(JSON.parse(saved));
+    if (saved) setStore(normalizeStore(JSON.parse(saved)));
   }, []);
 
   useEffect(() => {
@@ -631,4 +631,25 @@ function money(value: number) {
 
 function labelize(value: string) {
   return value.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function normalizeStore(saved: Partial<Store>): Store {
+  return {
+    settings: {
+      ...seedStore.settings,
+      ...saved.settings,
+      magneetoz: {
+        ...seedStore.settings.magneetoz,
+        ...(saved.settings?.magneetoz || {})
+      },
+      foodTimetable: {
+        ...seedStore.settings.foodTimetable,
+        ...(saved.settings?.foodTimetable || {})
+      }
+    },
+    students: saved.students || seedStore.students,
+    notices: saved.notices || seedStore.notices,
+    complaints: saved.complaints || seedStore.complaints,
+    rooms: saved.rooms || seedStore.rooms
+  };
 }
