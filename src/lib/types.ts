@@ -20,6 +20,7 @@ export type Student = {
   paidAmount: number;
   dueDate: string;
   paymentHistory: Payment[];
+  alerts?: string[];
 };
 
 export type Payment = {

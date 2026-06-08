@@ -1,7 +1,7 @@
 import { Complaint, Notice, Room, SiteSettings, Student } from "./types";
 
 export const settings: SiteSettings = {
-  pgName: "Imperial PG",
+  pgName: "Ap boys hostel",
   logoUrl: "",
   heroBanner: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=1800&q=90",
   about: "A premium PG built for students who want comfort, safety, good food, transparent fees, and fast support in one professionally managed place.",
@@ -22,7 +22,7 @@ export const settings: SiteSettings = {
   magneetoz: {
     enabled: true,
     restaurantName: "MAGNEETOZ - the taste of attraction",
-    title: "Use this coupon and get off on your next order",
+    title: "Use this coupon and get instant off on your next order",
     description: "Premium food offers for visitors, students and hostel staff. Click the offer and grab the latest deal directly on Magneetoz.",
     couponText: "USE COUPON: HOSTELLOVE",
     buttonText: "Claim Offer",

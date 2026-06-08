@@ -16,7 +16,9 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { signInWithEmailAndPassword } from "firebase/auth";
 import { complaints as seedComplaints, notices as seedNotices, rooms as seedRooms, settings as seedSettings, students as seedStudents } from "@/lib/mock-data";
+import { auth } from "@/lib/firebase";
 import type { Complaint, Notice, Payment, Room, SiteSettings, Student } from "@/lib/types";
 
 type View = "public" | "adminLogin" | "studentLogin" | "magneetozLogin" | "admin" | "student" | "magneetoz";
@@ -37,15 +39,18 @@ const seedStore: Store = {
 };
 
 const days = Object.keys(seedSettings.foodTimetable);
-const adminEmail = "admin@pg.com";
-const adminPassword = "admin123";
-const magneetozEmail = "magneetoz73@gmail.com";
-const magneetozPassword = "LURlum8423@";
+const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@pg.com";
+const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "admin123";
+const magneetozEmail = process.env.NEXT_PUBLIC_MAGNEETOZ_EMAIL || "magneetoz73@gmail.com";
+const magneetozPassword = process.env.NEXT_PUBLIC_MAGNEETOZ_PASSWORD || "LURlum8423@";
 
 export default function Home() {
   const [store, setStore] = useState<Store>(seedStore);
   const [view, setView] = useState<View>("public");
   const [activeStudentId, setActiveStudentId] = useState<string>("");
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("");
+  const [studentQuery, setStudentQuery] = useState("");
+  const [feeFilter, setFeeFilter] = useState<"all" | "paid" | "pending">("all");
   const [dark, setDark] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -109,9 +114,15 @@ export default function Home() {
   }
 
   function addPayment(studentId: string, amount: number, mode: Payment["mode"] = "Cash") {
+    const target = store.students.find((student) => student.studentId === studentId);
+    const payableAmount = target ? Math.min(Math.max(amount, 0), balance(target)) : amount;
+    if (!payableAmount) {
+      setMessage("Is student ki pending fees zero hai.");
+      return;
+    }
     const payment: Payment = {
       id: crypto.randomUUID(),
-      amount,
+      amount: payableAmount,
       mode,
       date: new Date().toISOString().slice(0, 10),
       receiptId: `REC-${Date.now()}`
@@ -119,14 +130,18 @@ export default function Home() {
     patchStore({
       students: store.students.map((student) =>
         student.studentId === studentId
-          ? { ...student, paidAmount: student.paidAmount + amount, paymentHistory: [payment, ...student.paymentHistory] }
+          ? { ...student, paidAmount: student.paidAmount + payableAmount, paymentHistory: [payment, ...student.paymentHistory] }
           : student
       )
     });
   }
 
   async function payOnline(student: Student) {
-    const amount = Math.max(balance(student), student.rentAmount);
+    const amount = balance(student);
+    if (amount <= 0) {
+      setMessage("Is student ki pending fees zero hai.");
+      return;
+    }
     try {
       const response = await fetch("/api/razorpay/order", {
         method: "POST",
@@ -162,10 +177,18 @@ export default function Home() {
     }
   }
 
-  function submitStudentLogin(formData: FormData) {
+  async function submitStudentLogin(formData: FormData) {
     const email = String(formData.get("email"));
     const password = String(formData.get("password"));
-    const student = store.students.find((item) => item.email === email && item.password === password);
+    if (auth) {
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch {
+        setMessage("Firebase student login failed. Email/password check karo.");
+        return;
+      }
+    }
+    const student = store.students.find((item) => item.email === email && (auth || item.password === password));
     if (!student) {
       setMessage("Student email/password match nahi hua.");
       return;
@@ -175,8 +198,18 @@ export default function Home() {
     setMessage("");
   }
 
-  function submitAdminLogin(formData: FormData) {
-    if (formData.get("email") === adminEmail && formData.get("password") === adminPassword) {
+  async function submitAdminLogin(formData: FormData) {
+    const email = String(formData.get("email"));
+    const password = String(formData.get("password"));
+    if (auth) {
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch {
+        setMessage("Firebase admin login failed. Email/password check karo.");
+        return;
+      }
+    }
+    if (email === adminEmail && (!auth ? password === adminPassword : true)) {
       setView("admin");
       setMessage("");
       return;
@@ -184,8 +217,18 @@ export default function Home() {
     setMessage("Admin email/password galat hai.");
   }
 
-  function submitMagneetozLogin(formData: FormData) {
-    if (formData.get("email") === magneetozEmail && formData.get("password") === magneetozPassword) {
+  async function submitMagneetozLogin(formData: FormData) {
+    const email = String(formData.get("email"));
+    const password = String(formData.get("password"));
+    if (auth) {
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch {
+        setMessage("Firebase Magneetoz login failed. Email/password check karo.");
+        return;
+      }
+    }
+    if (email === magneetozEmail && (!auth ? password === magneetozPassword : true)) {
       setView("magneetoz");
       setMessage("");
       return;
@@ -197,13 +240,13 @@ export default function Home() {
 
   return (
     <main className={shellClass}>
-      <Header view={view} setView={setView} dark={dark} setDark={setDark} />
+      <Header view={view} setView={setView} dark={dark} setDark={setDark} pgName={store.settings.pgName} />
       {message && <div className="mx-5 mt-4 rounded-lg bg-amber-100 px-4 py-3 font-bold text-amber-950 lg:mx-14">{message}</div>}
       {store.settings.magneetoz.enabled && <MagneetozBanner settings={store.settings} />}
       {view === "public" && <PublicSite store={store} />}
-      {view === "adminLogin" && <Login title="Admin Login" hint="Demo: admin@pg.com / admin123" onSubmit={submitAdminLogin} />}
-      {view === "studentLogin" && <Login title="Student Login" hint="Demo: rahul@student.com / 123456" onSubmit={submitStudentLogin} />}
-      {view === "magneetozLogin" && <Login title="Magneetoz Login" hint="magneetoz73@gmail.com / LURlum8423@" onSubmit={submitMagneetozLogin} />}
+      {view === "adminLogin" && <Login title="Admin Login" hint="Use your admin email and password." onSubmit={submitAdminLogin} />}
+      {view === "studentLogin" && <Login title="Student Login" hint="Use the email and password created by admin." onSubmit={submitStudentLogin} />}
+      {view === "magneetozLogin" && <Login title="Magneetoz Login" hint="Use Magneetoz owner login." onSubmit={submitMagneetozLogin} />}
       {view === "admin" && (
         <AdminDashboard
           store={store}
@@ -211,6 +254,12 @@ export default function Home() {
           patchStore={patchStore}
           addStudent={addStudent}
           addPayment={addPayment}
+          selectedStudentId={selectedStudentId}
+          setSelectedStudentId={setSelectedStudentId}
+          studentQuery={studentQuery}
+          setStudentQuery={setStudentQuery}
+          feeFilter={feeFilter}
+          setFeeFilter={setFeeFilter}
         />
       )}
       {view === "student" && activeStudent && (
@@ -226,14 +275,20 @@ export default function Home() {
   );
 }
 
-function Header({ view, setView, dark, setDark }: { view: View; setView: (view: View) => void; dark: boolean; setDark: (value: boolean) => void }) {
+function Header({ view, setView, dark, setDark, pgName }: { view: View; setView: (view: View) => void; dark: boolean; setDark: (value: boolean) => void; pgName: string }) {
+  const [open, setOpen] = useState(false);
+  const go = (next: View) => {
+    setView(next);
+    setOpen(false);
+  };
   return (
-    <header className="sticky top-0 z-50 flex flex-wrap items-center justify-between gap-3 border-b border-black/10 bg-white/85 px-5 py-3 text-zinc-950 backdrop-blur-xl lg:px-14">
-      <button className="flex items-center gap-3" onClick={() => setView("public")}>
-        <span className="grid h-11 w-11 place-items-center rounded-lg bg-zinc-950 font-black text-amber-200">IP</span>
+    <header className="sticky top-0 z-50 border-b border-black/10 bg-white/90 px-4 py-3 text-zinc-950 backdrop-blur-xl lg:px-14">
+      <div className="flex items-center justify-between gap-3">
+      <button className="flex items-center gap-3" onClick={() => go("public")}>
+        <span className="grid h-11 w-11 place-items-center rounded-lg bg-zinc-950 font-black text-amber-200">AP</span>
         <span className="text-left">
-          <strong className="block text-lg">Imperial PG</strong>
-          <small className="text-zinc-500">Premium PG Management</small>
+          <strong className="block text-lg">{pgName}</strong>
+          <small className="text-zinc-500">Boys Hostel Management</small>
         </span>
       </button>
       <nav className="hidden gap-6 font-bold lg:flex">
@@ -241,24 +296,39 @@ function Header({ view, setView, dark, setDark }: { view: View; setView: (view: 
           <a key={item} href={`#${item.toLowerCase().replaceAll(" ", "-")}`}>{item}</a>
         ))}
       </nav>
-      <div className="flex flex-wrap gap-2">
+      <div className="hidden gap-2 lg:flex">
         <button className="btn btn-light" onClick={() => setDark(!dark)} aria-label="Toggle dark mode"><Moon size={18} /></button>
         {view === "admin" || view === "student" || view === "magneetoz" ? (
-          <button className="btn btn-dark" onClick={() => setView("public")}><LogOut size={17} /> Logout</button>
+          <button className="btn btn-dark" onClick={() => go("public")}><LogOut size={17} /> Logout</button>
         ) : (
           <>
-            <button className="btn btn-light" onClick={() => setView("studentLogin")}>Student Login</button>
-            <button className="btn btn-light" onClick={() => setView("magneetozLogin")}>Magneetoz</button>
-            <button className="btn btn-dark" onClick={() => setView("adminLogin")}>Admin Login</button>
+            <button className="btn btn-light" onClick={() => go("studentLogin")}>Student Login</button>
+            <button className="btn btn-light" onClick={() => go("magneetozLogin")}>Magneetoz</button>
+            <button className="btn btn-dark" onClick={() => go("adminLogin")}>Admin Login</button>
           </>
         )}
-        <button className="btn btn-light lg:hidden" aria-label="Open menu"><Menu size={18} /></button>
       </div>
+      <button className="btn btn-light lg:hidden" onClick={() => setOpen(!open)} aria-label="Open menu"><Menu size={18} /></button>
+      </div>
+      {open && (
+        <div className="mt-3 grid gap-2 rounded-lg border border-black/10 bg-white p-3 lg:hidden">
+          <button className="btn btn-light justify-start" onClick={() => setDark(!dark)}><Moon size={18} /> Dark Mode</button>
+          {view === "admin" || view === "student" || view === "magneetoz" ? (
+            <button className="btn btn-dark justify-start" onClick={() => go("public")}><LogOut size={17} /> Logout</button>
+          ) : (
+            <>
+              <button className="btn btn-light justify-start" onClick={() => go("studentLogin")}>Student Login</button>
+              <button className="btn btn-light justify-start" onClick={() => go("magneetozLogin")}>Magneetoz</button>
+              <button className="btn btn-dark justify-start" onClick={() => go("adminLogin")}>Admin Login</button>
+            </>
+          )}
+        </div>
+      )}
     </header>
   );
 }
 
-function Login({ title, hint, onSubmit }: { title: string; hint: string; onSubmit: (formData: FormData) => void }) {
+function Login({ title, hint, onSubmit }: { title: string; hint: string; onSubmit: (formData: FormData) => void | Promise<void> }) {
   return (
     <section className="section mx-auto max-w-xl">
       <form action={onSubmit} className="premium-card grid gap-4 p-6">
@@ -276,16 +346,16 @@ function Login({ title, hint, onSubmit }: { title: string; hint: string; onSubmi
 function MagneetozBanner({ settings }: { settings: SiteSettings }) {
   return (
     <section className="section py-7">
-      <a href="https://magneetoz.com" target="_blank" rel="noreferrer" className="group relative block min-h-[68vh] overflow-hidden rounded-lg bg-zinc-950 text-white shadow-2xl">
+      <a href="https://magneetoz.com" target="_blank" rel="noreferrer" className="group relative block min-h-[430px] overflow-hidden rounded-lg bg-zinc-950 text-white shadow-2xl sm:min-h-[520px] lg:min-h-[68vh]">
         <img src={settings.magneetoz.bannerUrl} alt="Magneetoz promotional offer" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />
         <div className="absolute inset-0 bg-gradient-to-r from-black/88 via-black/58 to-black/10" />
-        <div className="relative flex min-h-[68vh] max-w-4xl flex-col justify-center p-6 lg:p-16">
+        <div className="relative flex min-h-[430px] max-w-4xl flex-col justify-center p-5 sm:min-h-[520px] lg:min-h-[68vh] lg:p-16">
           <p className="eyebrow">Exclusive Restaurant Promotion</p>
-          <h2 className="mt-3 text-5xl font-black leading-none lg:text-8xl">{settings.magneetoz.restaurantName}</h2>
-          <p className="mt-7 max-w-2xl text-2xl font-black text-amber-200">{settings.magneetoz.title}</p>
-          <p className="mt-4 max-w-2xl text-lg leading-8 text-white/80">{settings.magneetoz.description}</p>
+          <h2 className="mt-3 text-4xl font-black leading-none sm:text-5xl lg:text-8xl">{settings.magneetoz.restaurantName}</h2>
+          <p className="mt-5 max-w-2xl text-xl font-black text-amber-200 lg:mt-7 lg:text-2xl">{settings.magneetoz.title}</p>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-white/80 lg:text-lg lg:leading-8">{settings.magneetoz.description}</p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <span className="rounded-lg border border-amber-200/50 bg-amber-200 px-5 py-4 text-lg font-black text-zinc-950 shadow-xl">{settings.magneetoz.couponText}</span>
+            <span className="rounded-lg border border-amber-200/50 bg-amber-200 px-4 py-3 text-base font-black text-zinc-950 shadow-xl lg:px-5 lg:py-4 lg:text-lg">{settings.magneetoz.couponText}</span>
             <span className="btn bg-white text-zinc-950">{settings.magneetoz.buttonText}</span>
           </div>
           <p className="mt-5 text-sm font-bold uppercase text-white/70">Click anywhere on this offer to visit magneetoz.com</p>
@@ -298,13 +368,13 @@ function MagneetozBanner({ settings }: { settings: SiteSettings }) {
 function PublicSite({ store }: { store: Store }) {
   return (
     <>
-      <section className="relative min-h-[78vh] overflow-hidden">
+      <section className="relative min-h-[560px] overflow-hidden lg:min-h-[78vh]">
         <img src={store.settings.heroBanner} alt="Premium PG room" className="absolute inset-0 h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/45 to-transparent" />
-        <div className="relative max-w-4xl px-6 py-28 text-white lg:px-20 lg:py-36">
+        <div className="relative max-w-4xl px-6 py-20 text-white lg:px-20 lg:py-36">
           <p className="eyebrow">Luxury Hotel Style PG</p>
-          <h1 className="text-6xl font-black leading-none lg:text-8xl">{store.settings.pgName}</h1>
-          <p className="mt-6 max-w-2xl text-lg leading-8 text-white/86">{store.settings.about}</p>
+          <h1 className="text-5xl font-black leading-none lg:text-8xl">{store.settings.pgName}</h1>
+          <p className="mt-5 max-w-2xl text-base leading-7 text-white/86 lg:text-lg lg:leading-8">{store.settings.about}</p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a className="btn bg-amber-300 text-zinc-950" href="#rooms">Explore Rooms</a>
             <a className="btn border border-white/30 bg-white/10 text-white" href="#contact">Contact PG</a>
@@ -352,13 +422,26 @@ function PublicSite({ store }: { store: Store }) {
   );
 }
 
-function AdminDashboard({ store, stats, patchStore, addStudent, addPayment }: {
+function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, selectedStudentId, setSelectedStudentId, studentQuery, setStudentQuery, feeFilter, setFeeFilter }: {
   store: Store;
   stats: { occupied: number; vacant: number; collection: number; pending: number; complaintsPending: number; complaintsResolved: number };
   patchStore: (patch: Partial<Store>) => void;
   addStudent: (formData: FormData) => void;
   addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void;
+  selectedStudentId: string;
+  setSelectedStudentId: (id: string) => void;
+  studentQuery: string;
+  setStudentQuery: (query: string) => void;
+  feeFilter: "all" | "paid" | "pending";
+  setFeeFilter: (filter: "all" | "paid" | "pending") => void;
 }) {
+  const filteredStudents = store.students.filter((student) => {
+    const query = studentQuery.trim().toLowerCase();
+    const matchesQuery = !query || student.fullName.toLowerCase().includes(query) || student.studentId.toLowerCase().includes(query);
+    const matchesFilter = feeFilter === "all" || (feeFilter === "paid" ? balance(student) === 0 : balance(student) > 0);
+    return matchesQuery && matchesFilter;
+  });
+  const selectedStudent = store.students.find((student) => student.studentId === selectedStudentId) || filteredStudents[0];
   const statItems: Array<[string, string | number, LucideIcon]> = [
     ["Total Students", store.students.length, BedDouble],
     ["Occupied Beds", stats.occupied, Shield],
@@ -402,9 +485,15 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment }: {
             <div className="rounded-lg bg-rose-50 p-4"><strong className="block text-2xl">{store.students.filter((student) => balance(student) > 0).length}</strong><span className="text-sm text-rose-800">Students pending</span></div>
             <div className="rounded-lg bg-amber-50 p-4"><strong className="block text-2xl">{money(store.students.reduce((sum, student) => sum + balance(student), 0))}</strong><span className="text-sm text-amber-800">Total pending</span></div>
           </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]">
+            <input className="field" value={studentQuery} onChange={(event) => setStudentQuery(event.target.value)} placeholder="Search by student name or ID" />
+            <div className="flex gap-2">
+              {(["all", "paid", "pending"] as const).map((filter) => <button key={filter} className={`btn ${feeFilter === filter ? "btn-dark" : "btn-light"}`} onClick={() => setFeeFilter(filter)}>{filter}</button>)}
+            </div>
+          </div>
           <div className="mt-4 grid gap-3">
-            {store.students.map((student) => (
-              <div className="rounded-lg border border-black/10 p-4" key={student.id}>
+            {filteredStudents.map((student) => (
+              <button className="rounded-lg border border-black/10 p-4 text-left transition hover:border-amber-600" key={student.id} onClick={() => setSelectedStudentId(student.studentId)}>
                 <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
                   <div>
                     <strong>{student.fullName}</strong>
@@ -412,20 +501,17 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment }: {
                     <p className="text-sm">Paid {money(student.paidAmount)} | Remaining {money(balance(student))} | Due {student.dueDate}</p>
                     <p className={`mt-1 text-sm font-black ${balance(student) === 0 ? "text-emerald-700" : "text-rose-700"}`}>{balance(student) === 0 ? "This month payment done" : `${money(balance(student))} pending`}</p>
                   </div>
-                  <form className="grid gap-2 sm:grid-cols-[120px_110px_1fr_auto]" action={(data) => addPayment(student.studentId, Number(data.get("amount")), data.get("mode") as Payment["mode"])}>
-                    <input className="field" name="amount" type="number" placeholder="Amount" required />
-                    <select className="field" name="mode"><option>Cash</option><option>UPI</option><option>Bank</option><option>Razorpay</option></select>
-                    <input className="field" name="note" placeholder="Receipt/note" />
-                    <button className="btn btn-dark">Add Offline</button>
-                  </form>
+                  <span className="btn btn-light">Open Details</span>
                 </div>
                 <div className="mt-3 grid gap-2 text-sm text-zinc-500">
                   {student.paymentHistory.map((payment) => <span key={payment.id}>{payment.date} | {payment.mode} | {money(payment.amount)} | {payment.receiptId}</span>)}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
+
+        {selectedStudent && <StudentFeeDetail student={selectedStudent} store={store} patchStore={patchStore} addPayment={addPayment} />}
 
         <AdminContent store={store} patchStore={patchStore} />
       </div>
@@ -484,6 +570,52 @@ function AdminContent({ store, patchStore }: { store: Store; patchStore: (patch:
 
       <FoodTimetableManager store={store} patchStore={patchStore} />
     </>
+  );
+}
+
+function StudentFeeDetail({ student, store, patchStore, addPayment }: { student: Student; store: Store; patchStore: (patch: Partial<Store>) => void; addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void }) {
+  return (
+    <div className="premium-card p-5 text-zinc-950 lg:col-span-3">
+      <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+        <div>
+          <p className="eyebrow">Student Detail</p>
+          <h2 className="text-3xl font-black">{student.fullName}</h2>
+          <div className="mt-4 grid gap-2 text-sm">
+            <p><strong>Identity ID:</strong> {student.studentId}</p>
+            <p><strong>Father:</strong> {student.fatherName}</p>
+            <p><strong>Phone:</strong> {student.phone}</p>
+            <p><strong>Email:</strong> {student.email}</p>
+            <p><strong>Room/Bed:</strong> {student.roomNumber} / {student.bedNumber}</p>
+            <p><strong>Type:</strong> {student.roomType} | {student.accommodationType}</p>
+            <p><strong>Total:</strong> {money(student.rentAmount + student.securityAmount)}</p>
+            <p><strong>Paid:</strong> {money(student.paidAmount)}</p>
+            <p><strong>Pending:</strong> {money(balance(student))}</p>
+          </div>
+        </div>
+        <div className="grid gap-4">
+          <form className="grid gap-3 rounded-lg border border-black/10 p-4" action={(data) => addPayment(student.studentId, Number(data.get("amount")), data.get("mode") as Payment["mode"])}>
+            <h3 className="text-xl font-black">Offline Cash / UPI Collection</h3>
+            <input className="field" name="amount" type="number" max={balance(student)} placeholder={`Pending ${money(balance(student))}`} required />
+            <select className="field" name="mode"><option>Cash</option><option>UPI</option><option>Bank</option><option>Razorpay</option></select>
+            <button className="btn btn-dark">Update Payment</button>
+          </form>
+          <form className="grid gap-3 rounded-lg border border-black/10 p-4" action={(data) => {
+            const alert = String(data.get("alert"));
+            patchStore({ students: store.students.map((item) => item.studentId === student.studentId ? { ...item, alerts: [alert, ...(item.alerts || [])] } : item) });
+          }}>
+            <h3 className="text-xl font-black">Send Fee Alert / Notice</h3>
+            <textarea className="field" name="alert" defaultValue={`Please complete your pending fee: ${money(balance(student))}.`} />
+            <button className="btn btn-dark">Send Alert</button>
+          </form>
+        </div>
+      </div>
+      <div className="mt-5">
+        <h3 className="text-xl font-black">Payment Timeline</h3>
+        <div className="mt-3 grid gap-2">
+          {student.paymentHistory.length ? student.paymentHistory.map((payment) => <div key={payment.id} className="rounded-lg border border-black/10 p-3"><strong>{money(payment.amount)}</strong><p className="text-sm text-zinc-500">{payment.date} | {payment.mode} | {payment.receiptId}</p></div>) : <p className="text-zinc-500">No payment recorded yet.</p>}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -552,6 +684,23 @@ function StudentDashboard({ store, student, patchStore, payOnline }: { store: St
     <section className="section">
       <p className="eyebrow">Student Dashboard</p>
       <h1 className="mt-2 text-5xl font-black">Welcome, {student.fullName}</h1>
+      <div className="premium-card mt-6 overflow-hidden text-zinc-950">
+        <div className="bg-zinc-950 p-5 text-white">
+          <p className="eyebrow">Digital Identity Card</p>
+          <h2 className="text-3xl font-black">{store.settings.pgName}</h2>
+        </div>
+        <div className="grid gap-4 p-5 sm:grid-cols-[120px_1fr]">
+          <div className="grid h-28 w-28 place-items-center rounded-lg bg-amber-200 text-4xl font-black text-zinc-950">{student.fullName.slice(0, 2).toUpperCase()}</div>
+          <div className="grid gap-1">
+            <strong className="text-2xl">{student.fullName}</strong>
+            <span>Unique ID: <strong>{student.studentId}</strong></span>
+            <span>Room {student.roomNumber} | Bed {student.bedNumber}</span>
+            <span>{student.roomType} | {student.accommodationType}</span>
+            <span className={balance(student) === 0 ? "font-black text-emerald-700" : "font-black text-rose-700"}>{balance(student) === 0 ? "Payment Clear" : `${money(balance(student))} Pending`}</span>
+          </div>
+        </div>
+      </div>
+      {(student.alerts || []).length > 0 && <div className="premium-card mt-6 p-5 text-zinc-950"><h2 className="text-2xl font-black">Admin Alerts</h2>{student.alerts?.map((alert, index) => <p key={`${alert}-${index}`} className="mt-3 rounded-lg bg-amber-50 p-3 font-bold text-amber-950">{alert}</p>)}</div>}
       <div className="mt-8 grid gap-5 lg:grid-cols-3">
         <div className="premium-card p-5 text-zinc-950"><h2 className="text-2xl font-black">Profile</h2><p className="mt-3 text-zinc-600">{student.studentId} | Room {student.roomNumber}, Bed {student.bedNumber}</p><p>{student.roomType} | {student.accommodationType}</p></div>
         <div className="premium-card p-5 text-zinc-950"><h2 className="text-2xl font-black">Fees</h2><p>Total: {money(student.rentAmount + student.securityAmount)}</p><p>Paid: {money(student.paidAmount)}</p><p>Remaining: {money(balance(student))}</p><button className="btn btn-dark mt-4" onClick={() => payOnline(student)}>Pay Online</button></div>
@@ -634,17 +783,20 @@ function labelize(value: string) {
 }
 
 function normalizeStore(saved: Partial<Store>): Store {
+  const savedSettings = saved.settings || {};
+  const migratedPgName = savedSettings.pgName === "Imperial PG" ? seedStore.settings.pgName : savedSettings.pgName;
   return {
     settings: {
       ...seedStore.settings,
-      ...saved.settings,
+      ...savedSettings,
+      pgName: migratedPgName || seedStore.settings.pgName,
       magneetoz: {
         ...seedStore.settings.magneetoz,
-        ...(saved.settings?.magneetoz || {})
+        ...(savedSettings.magneetoz || {})
       },
       foodTimetable: {
         ...seedStore.settings.foodTimetable,
-        ...(saved.settings?.foodTimetable || {})
+        ...(savedSettings.foodTimetable || {})
       }
     },
     students: saved.students || seedStore.students,

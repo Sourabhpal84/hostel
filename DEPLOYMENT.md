@@ -40,27 +40,21 @@ In Razorpay Dashboard:
 - Copy Key ID into `NEXT_PUBLIC_RAZORPAY_KEY_ID`.
 - Copy Key Secret into `RAZORPAY_KEY_SECRET`.
 
-## Demo Access
+## Real Login Setup
 
-Admin:
+In Firebase Console, enable `Authentication > Sign-in method > Email/Password`.
 
-```text
-admin@pg.com
-admin123
-```
+Create Firebase Auth users:
 
-Student:
+- Admin user: same email as `NEXT_PUBLIC_ADMIN_EMAIL`
+- Magneetoz user: `magneetoz73@gmail.com`
+- Student users: created when you add real students
 
-```text
-rahul@student.com
-123456
-```
+In Vercel env, set:
 
-Magneetoz offer manager:
-
-```text
-magneetoz73@gmail.com
-LURlum8423@
+```bash
+NEXT_PUBLIC_ADMIN_EMAIL=your-admin-email@example.com
+NEXT_PUBLIC_MAGNEETOZ_EMAIL=magneetoz73@gmail.com
 ```
 
 The current app is deploy-ready and works immediately with browser storage. Firebase files and rules are included so the next upgrade can replace browser storage with real shared Firestore persistence without changing the UI.

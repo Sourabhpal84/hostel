@@ -13,21 +13,20 @@ Open `http://localhost:3000`.
 
 For Vercel deployment, see `DEPLOYMENT.md`.
 
-## Current Demo Login Flow
+## Login Flow
 
-The current UI uses mock data so you can preview the full experience immediately:
+When Firebase env keys are configured, login uses Firebase Authentication email/password.
 
 - Public visitor: homepage, rooms, food timetable, notices, contact, Magneetoz promo.
 - Admin: dashboard stats, new admission, fee update, notice management, complaint resolution, room management.
 - Student: profile, fee summary, notices, complaint submission, food timetable.
 - Magneetoz: separate offer manager for restaurant banner, coupon, title, description, image, and enable/disable.
 
-Magneetoz login:
+Create these users in Firebase Authentication:
 
-```text
-magneetoz73@gmail.com
-LURlum8423@
-```
+- Admin user: set email in `NEXT_PUBLIC_ADMIN_EMAIL`
+- Magneetoz user: `magneetoz73@gmail.com`
+- Student users: create email/password and add the same email in the student admission record
 
 ## Firebase Setup
 
@@ -42,6 +41,8 @@ NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
 NEXT_PUBLIC_FIREBASE_APP_ID=
 NEXT_PUBLIC_RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
+NEXT_PUBLIC_ADMIN_EMAIL=
+NEXT_PUBLIC_MAGNEETOZ_EMAIL=magneetoz73@gmail.com
 ```
 
 Suggested Firestore collections:
