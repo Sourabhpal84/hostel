@@ -21,9 +21,12 @@ export const settings: SiteSettings = {
   },
   magneetoz: {
     enabled: true,
-    title: "Exclusive Magneetoz Offers",
-    description: "Tap the banner to explore student-friendly deals.",
-    bannerUrl: "https://images.unsplash.com/photo-1607083206968-13611e3d76db?auto=format&fit=crop&w=1600&q=85"
+    restaurantName: "MAGNEETOZ - the taste of attraction",
+    title: "Use this coupon and get off on your next order",
+    description: "Premium food offers for visitors, students and hostel staff. Click the offer and grab the latest deal directly on Magneetoz.",
+    couponText: "USE COUPON: HOSTELLOVE",
+    buttonText: "Claim Offer",
+    bannerUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1800&q=90"
   }
 };
 

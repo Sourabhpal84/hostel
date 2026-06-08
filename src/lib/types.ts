@@ -74,8 +74,11 @@ export type SiteSettings = {
   foodTimetable: Record<string, { breakfast: string; lunch: string; dinner: string }>;
   magneetoz: {
     enabled: boolean;
+    restaurantName: string;
     title: string;
     description: string;
+    couponText: string;
+    buttonText: string;
     bannerUrl: string;
   };
 };
