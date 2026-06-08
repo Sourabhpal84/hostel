@@ -1,0 +1,15 @@
+{
+  "name": "Imperial PG Hostel Management",
+  "short_name": "Imperial PG",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f3ee",
+  "theme_color": "#141414",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
