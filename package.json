@@ -13,7 +13,7 @@
     "firebase": "latest",
     "firebase-admin": "latest",
     "lucide-react": "latest",
-    "next": "16.0.0",
+    "next": "^16.0.7",
     "razorpay": "latest",
     "react": "latest",
     "react-dom": "latest",
