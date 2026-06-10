@@ -19,7 +19,8 @@ import { useEffect, useMemo, useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { complaints as seedComplaints, notices as seedNotices, rooms as seedRooms, settings as seedSettings, students as seedStudents } from "@/lib/mock-data";
 import { auth } from "@/lib/firebase";
-import type { Complaint, Notice, Payment, Room, SiteSettings, Student } from "@/lib/types";
+import { listenCentralMagneetoz, listenMagneetozEvents, saveCentralMagneetoz, trackCentralMagneetozEvent } from "@/lib/magneetoz-central";
+import type { Complaint, ConnectedPgSite, MagneetozReferralEvent, Notice, Payment, Room, SiteSettings, Student } from "@/lib/types";
 
 type View = "public" | "adminLogin" | "studentLogin" | "magneetozLogin" | "admin" | "student" | "magneetoz";
 type Store = {
@@ -28,6 +29,8 @@ type Store = {
   notices: Notice[];
   complaints: Complaint[];
   rooms: Room[];
+  magneetozEvents: MagneetozReferralEvent[];
+  connectedPgSites: ConnectedPgSite[];
 };
 
 const seedStore: Store = {
@@ -35,7 +38,9 @@ const seedStore: Store = {
   students: seedStudents,
   notices: seedNotices,
   complaints: seedComplaints,
-  rooms: seedRooms
+  rooms: seedRooms,
+  magneetozEvents: [],
+  connectedPgSites: [{ id: "ap-boys-hostel", name: seedSettings.pgName, sourceId: "APBOYS" }]
 };
 
 const days = Object.keys(seedSettings.foodTimetable);
@@ -43,6 +48,7 @@ const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL || "admin@pg.com";
 const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "admin123";
 const magneetozEmail = process.env.NEXT_PUBLIC_MAGNEETOZ_EMAIL || "magneetoz73@gmail.com";
 const magneetozPassword = process.env.NEXT_PUBLIC_MAGNEETOZ_PASSWORD || "LURlum8423@";
+const pgSourceId = process.env.NEXT_PUBLIC_PG_SOURCE_ID || "APBOYS";
 
 export default function Home() {
   const [store, setStore] = useState<Store>(seedStore);
@@ -63,6 +69,19 @@ export default function Home() {
     window.localStorage.setItem("premiumPgStore", JSON.stringify(store));
   }, [store]);
 
+  useEffect(() => {
+    const unsubscribeContent = listenCentralMagneetoz((magneetoz) => {
+      setStore((current) => ({ ...current, settings: { ...current.settings, magneetoz: { ...current.settings.magneetoz, ...magneetoz } } }));
+    });
+    const unsubscribeEvents = listenMagneetozEvents((events) => {
+      setStore((current) => ({ ...current, magneetozEvents: events }));
+    });
+    return () => {
+      unsubscribeContent();
+      unsubscribeEvents();
+    };
+  }, []);
+
   const activeStudent = store.students.find((student) => student.studentId === activeStudentId) || store.students[0];
 
   const stats = useMemo(() => {
@@ -82,6 +101,21 @@ export default function Home() {
 
   function patchStore(patch: Partial<Store>) {
     setStore((current) => ({ ...current, ...patch }));
+  }
+
+  function trackMagneetozClick() {
+    const referralCode = store.settings.magneetoz.referralEnabled ? `${store.settings.magneetoz.referralCodePrefix}-${pgSourceId}` : pgSourceId;
+    const event: MagneetozReferralEvent = {
+      id: crypto.randomUUID(),
+      pgSourceId,
+      pgName: store.settings.pgName,
+      referralCode,
+      eventType: "click",
+      createdAt: new Date().toISOString()
+    };
+    setStore((current) => ({ ...current, magneetozEvents: [event, ...current.magneetozEvents] }));
+    const { id: _id, ...centralEvent } = event;
+    void trackCentralMagneetozEvent(centralEvent);
   }
 
   function addStudent(formData: FormData) {
@@ -242,7 +276,7 @@ export default function Home() {
     <main className={shellClass}>
       <Header view={view} setView={setView} dark={dark} setDark={setDark} pgName={store.settings.pgName} />
       {message && <div className="mx-5 mt-4 rounded-lg bg-amber-100 px-4 py-3 font-bold text-amber-950 lg:mx-14">{message}</div>}
-      {store.settings.magneetoz.enabled && <MagneetozBanner settings={store.settings} />}
+      {store.settings.magneetoz.enabled && <MagneetozBanner settings={store.settings} pgSourceId={pgSourceId} onTrack={trackMagneetozClick} />}
       {view === "public" && <PublicSite store={store} />}
       {view === "adminLogin" && <Login title="Admin Login" hint="Use your admin email and password." onSubmit={submitAdminLogin} />}
       {view === "studentLogin" && <Login title="Student Login" hint="Use the email and password created by admin." onSubmit={submitStudentLogin} />}
@@ -343,10 +377,12 @@ function Login({ title, hint, onSubmit }: { title: string; hint: string; onSubmi
   );
 }
 
-function MagneetozBanner({ settings }: { settings: SiteSettings }) {
+function MagneetozBanner({ settings, pgSourceId, onTrack }: { settings: SiteSettings; pgSourceId?: string; onTrack?: () => void }) {
+  const referralCode = settings.magneetoz.referralEnabled ? `${settings.magneetoz.referralCodePrefix}-${pgSourceId || "PG"}` : pgSourceId || "PG";
+  const targetLink = `${settings.magneetoz.websiteLink}?source=${encodeURIComponent(pgSourceId || "PG")}&ref=${encodeURIComponent(referralCode)}`;
   return (
     <section className="section py-7">
-      <a href="https://magneetoz.com" target="_blank" rel="noreferrer" className="group relative block min-h-[430px] overflow-hidden rounded-lg bg-zinc-950 text-white shadow-2xl sm:min-h-[520px] lg:min-h-[68vh]">
+      <a href={targetLink} onClick={onTrack} target="_blank" rel="noreferrer" className="group relative block min-h-[430px] overflow-hidden rounded-lg bg-zinc-950 text-white shadow-2xl sm:min-h-[520px] lg:min-h-[68vh]">
         <img src={settings.magneetoz.bannerUrl} alt="Magneetoz promotional offer" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />
         <div className="absolute inset-0 bg-gradient-to-r from-black/88 via-black/58 to-black/10" />
         <div className="relative flex min-h-[430px] max-w-4xl flex-col justify-center p-5 sm:min-h-[520px] lg:min-h-[68vh] lg:p-16">
@@ -354,8 +390,10 @@ function MagneetozBanner({ settings }: { settings: SiteSettings }) {
           <h2 className="mt-3 text-4xl font-black leading-none sm:text-5xl lg:text-8xl">{settings.magneetoz.restaurantName}</h2>
           <p className="mt-5 max-w-2xl text-xl font-black text-amber-200 lg:mt-7 lg:text-2xl">{settings.magneetoz.title}</p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-white/80 lg:text-lg lg:leading-8">{settings.magneetoz.description}</p>
+          <p className="mt-3 max-w-2xl text-base font-bold text-white">{settings.magneetoz.discountDetails}</p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <span className="rounded-lg border border-amber-200/50 bg-amber-200 px-4 py-3 text-base font-black text-zinc-950 shadow-xl lg:px-5 lg:py-4 lg:text-lg">{settings.magneetoz.couponText}</span>
+            <span className="rounded-lg border border-white/30 bg-white/10 px-4 py-3 text-base font-black text-white">REF: {referralCode}</span>
             <span className="btn bg-white text-zinc-950">{settings.magneetoz.buttonText}</span>
           </div>
           <p className="mt-5 text-sm font-bold uppercase text-white/70">Click anywhere on this offer to visit magneetoz.com</p>
@@ -620,24 +658,78 @@ function StudentFeeDetail({ student, store, patchStore, addPayment }: { student:
 }
 
 function MagneetozManager({ store, patchStore }: { store: Store; patchStore: (patch: Partial<Store>) => void }) {
+  const totalClicks = store.magneetozEvents.filter((event) => event.eventType === "click").length;
+  const totalOrders = store.magneetozEvents.filter((event) => event.eventType === "order").length;
+  const totalRevenue = store.magneetozEvents.reduce((sum, event) => sum + (event.orderValue || 0), 0);
+  const byPg = store.connectedPgSites.map((site) => {
+    const events = store.magneetozEvents.filter((event) => event.pgSourceId === site.sourceId);
+    return {
+      ...site,
+      clicks: events.filter((event) => event.eventType === "click").length,
+      orders: events.filter((event) => event.eventType === "order").length,
+      revenue: events.reduce((sum, event) => sum + (event.orderValue || 0), 0)
+    };
+  });
+  function savePromotion(data: FormData) {
+    const magneetoz = {
+      enabled: data.get("enabled") === "on",
+      restaurantName: String(data.get("restaurantName") || store.settings.magneetoz.restaurantName),
+      title: String(data.get("title") || store.settings.magneetoz.title),
+      description: String(data.get("description") || store.settings.magneetoz.description),
+      discountDetails: String(data.get("discountDetails") || store.settings.magneetoz.discountDetails),
+      couponText: String(data.get("couponText") || store.settings.magneetoz.couponText),
+      referralCodePrefix: String(data.get("referralCodePrefix") || store.settings.magneetoz.referralCodePrefix),
+      referralEnabled: data.get("referralEnabled") === "on",
+      buttonText: String(data.get("buttonText") || store.settings.magneetoz.buttonText),
+      bannerUrl: String(data.get("bannerUrl") || store.settings.magneetoz.bannerUrl),
+      foodImages: splitLines(String(data.get("foodImages") || store.settings.magneetoz.foodImages.join("\n"))),
+      websiteLink: String(data.get("websiteLink") || store.settings.magneetoz.websiteLink),
+      whatsappLink: String(data.get("whatsappLink") || store.settings.magneetoz.whatsappLink),
+      instagramLink: String(data.get("instagramLink") || store.settings.magneetoz.instagramLink),
+      qrCodes: splitLines(String(data.get("qrCodes") || store.settings.magneetoz.qrCodes.join("\n"))),
+      videos: splitLines(String(data.get("videos") || store.settings.magneetoz.videos.join("\n")))
+    };
+    patchStore({ settings: { ...store.settings, magneetoz } });
+    void saveCentralMagneetoz(magneetoz);
+  }
   return (
     <section className="section">
       <p className="eyebrow">Magneetoz Control</p>
-      <h1 className="mt-2 text-5xl font-black">Offer Manager</h1>
+      <h1 className="mt-2 text-5xl font-black">Central Promotion & Analytics</h1>
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
+        <div className="premium-card p-5 text-zinc-950"><strong className="block text-3xl">{totalClicks}</strong><span>Promotion clicks</span></div>
+        <div className="premium-card p-5 text-zinc-950"><strong className="block text-3xl">{totalOrders}</strong><span>Total orders</span></div>
+        <div className="premium-card p-5 text-zinc-950"><strong className="block text-3xl">{money(totalRevenue)}</strong><span>Total revenue</span></div>
+      </div>
       <div className="mt-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <form className="premium-card grid gap-3 p-5 text-zinc-950" action={(data) => patchStore({ settings: { ...store.settings, magneetoz: { enabled: data.get("enabled") === "on", restaurantName: String(data.get("restaurantName") || store.settings.magneetoz.restaurantName), title: String(data.get("title") || store.settings.magneetoz.title), description: String(data.get("description") || store.settings.magneetoz.description), couponText: String(data.get("couponText") || store.settings.magneetoz.couponText), buttonText: String(data.get("buttonText") || store.settings.magneetoz.buttonText), bannerUrl: String(data.get("bannerUrl") || store.settings.magneetoz.bannerUrl) } } })}>
-          <h2 className="text-2xl font-black">Create / Edit Offer</h2>
+        <form className="premium-card grid gap-3 p-5 text-zinc-950" action={savePromotion}>
+          <h2 className="text-2xl font-black">Central Content Manager</h2>
           <label className="flex gap-2 font-bold"><input name="enabled" type="checkbox" defaultChecked={store.settings.magneetoz.enabled} /> Show offer on website</label>
+          <label className="flex gap-2 font-bold"><input name="referralEnabled" type="checkbox" defaultChecked={store.settings.magneetoz.referralEnabled} /> Enable referral code</label>
           <input name="restaurantName" className="field" defaultValue={store.settings.magneetoz.restaurantName} placeholder="Restaurant name" />
           <input name="title" className="field" defaultValue={store.settings.magneetoz.title} placeholder="Offer headline" />
           <textarea name="description" className="field" defaultValue={store.settings.magneetoz.description} placeholder="Offer description" />
+          <input name="discountDetails" className="field" defaultValue={store.settings.magneetoz.discountDetails} placeholder="Discount details" />
           <input name="couponText" className="field" defaultValue={store.settings.magneetoz.couponText} placeholder="Coupon text" />
+          <input name="referralCodePrefix" className="field" defaultValue={store.settings.magneetoz.referralCodePrefix} placeholder="Referral code prefix" />
           <input name="buttonText" className="field" defaultValue={store.settings.magneetoz.buttonText} placeholder="Button text" />
           <input name="bannerUrl" className="field" defaultValue={store.settings.magneetoz.bannerUrl} placeholder="Large offer image URL" />
+          <input name="websiteLink" className="field" defaultValue={store.settings.magneetoz.websiteLink} placeholder="Website link" />
+          <input name="whatsappLink" className="field" defaultValue={store.settings.magneetoz.whatsappLink} placeholder="WhatsApp link" />
+          <input name="instagramLink" className="field" defaultValue={store.settings.magneetoz.instagramLink} placeholder="Instagram link" />
+          <textarea name="foodImages" className="field" defaultValue={store.settings.magneetoz.foodImages.join("\n")} placeholder="Pizza/food image URLs, one per line" />
+          <textarea name="qrCodes" className="field" defaultValue={store.settings.magneetoz.qrCodes.join("\n")} placeholder="QR code image URLs, one per line" />
+          <textarea name="videos" className="field" defaultValue={store.settings.magneetoz.videos.join("\n")} placeholder="Promotional video URLs, one per line" />
           <button className="btn btn-dark">Save Offer</button>
         </form>
         <div>
-          <MagneetozBanner settings={store.settings} />
+          <MagneetozBanner settings={store.settings} pgSourceId={pgSourceId} />
+          <div className="premium-card mt-6 p-5 text-zinc-950">
+            <h2 className="text-2xl font-black">Connected PG Websites</h2>
+            <div className="mt-3 grid gap-3">
+              {byPg.map((site) => <div key={site.id} className="rounded-lg border border-black/10 p-3"><strong>{site.name}</strong><p className="text-sm text-zinc-500">Source: {site.sourceId} | Clicks {site.clicks} | Orders {site.orders} | Revenue {money(site.revenue)}</p></div>)}
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -782,8 +874,12 @@ function labelize(value: string) {
   return value.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
 }
 
+function splitLines(value: string) {
+  return value.split("\n").map((item) => item.trim()).filter(Boolean);
+}
+
 function normalizeStore(saved: Partial<Store>): Store {
-  const savedSettings = saved.settings || {};
+  const savedSettings: Partial<SiteSettings> = saved.settings || {};
   const migratedPgName = savedSettings.pgName === "Imperial PG" ? seedStore.settings.pgName : savedSettings.pgName;
   return {
     settings: {
@@ -802,6 +898,8 @@ function normalizeStore(saved: Partial<Store>): Store {
     students: saved.students || seedStore.students,
     notices: saved.notices || seedStore.notices,
     complaints: saved.complaints || seedStore.complaints,
-    rooms: saved.rooms || seedStore.rooms
+    rooms: saved.rooms || seedStore.rooms,
+    magneetozEvents: saved.magneetozEvents || seedStore.magneetozEvents,
+    connectedPgSites: saved.connectedPgSites || seedStore.connectedPgSites
   };
 }

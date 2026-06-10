@@ -55,6 +55,13 @@ In Vercel env, set:
 ```bash
 NEXT_PUBLIC_ADMIN_EMAIL=your-admin-email@example.com
 NEXT_PUBLIC_MAGNEETOZ_EMAIL=magneetoz73@gmail.com
+NEXT_PUBLIC_PG_SOURCE_ID=APBOYS
+```
+
+For future PG websites, keep the same central Firebase project and change only:
+
+```bash
+NEXT_PUBLIC_PG_SOURCE_ID=NEW_PG_UNIQUE_CODE
 ```
 
 The current app is deploy-ready and works immediately with browser storage. Firebase files and rules are included so the next upgrade can replace browser storage with real shared Firestore persistence without changing the UI.

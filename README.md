@@ -21,6 +21,7 @@ When Firebase env keys are configured, login uses Firebase Authentication email/
 - Admin: dashboard stats, new admission, fee update, notice management, complaint resolution, room management.
 - Student: profile, fee summary, notices, complaint submission, food timetable.
 - Magneetoz: separate offer manager for restaurant banner, coupon, title, description, image, and enable/disable.
+- Central Magneetoz: one reusable promotion model for banner, food images, coupon, referral code, links, QR codes, videos, connected PG sources, and analytics.
 
 Create these users in Firebase Authentication:
 
@@ -43,7 +44,24 @@ NEXT_PUBLIC_RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
 NEXT_PUBLIC_ADMIN_EMAIL=
 NEXT_PUBLIC_MAGNEETOZ_EMAIL=magneetoz73@gmail.com
+NEXT_PUBLIC_PG_SOURCE_ID=APBOYS
 ```
+
+## Centralized Magneetoz System
+
+All PG websites should use the same central Firestore records:
+
+- `centralMagneetoz/settings`: central promotion content
+- `centralMagneetozSites`: connected PG websites with unique `sourceId`
+- `centralMagneetozEvents`: click/order tracking events
+
+For every future PG website, only set one unique env value:
+
+```bash
+NEXT_PUBLIC_PG_SOURCE_ID=UNIQUE_PG_CODE
+```
+
+The promotion link automatically appends `source` and `ref` query parameters so Magneetoz can identify which PG generated the click/order.
 
 Suggested Firestore collections:
 

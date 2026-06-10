@@ -78,8 +78,33 @@ export type SiteSettings = {
     restaurantName: string;
     title: string;
     description: string;
+    discountDetails: string;
     couponText: string;
+    referralCodePrefix: string;
+    referralEnabled: boolean;
     buttonText: string;
     bannerUrl: string;
+    foodImages: string[];
+    websiteLink: string;
+    whatsappLink: string;
+    instagramLink: string;
+    qrCodes: string[];
+    videos: string[];
   };
+};
+
+export type MagneetozReferralEvent = {
+  id: string;
+  pgSourceId: string;
+  pgName: string;
+  referralCode: string;
+  eventType: "click" | "order";
+  createdAt: string;
+  orderValue?: number;
+};
+
+export type ConnectedPgSite = {
+  id: string;
+  name: string;
+  sourceId: string;
 };

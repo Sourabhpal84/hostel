@@ -24,9 +24,21 @@ export const settings: SiteSettings = {
     restaurantName: "MAGNEETOZ - the taste of attraction",
     title: "Use this coupon and get instant off on your next order",
     description: "Premium food offers for visitors, students and hostel staff. Click the offer and grab the latest deal directly on Magneetoz.",
+    discountDetails: "Flat student offer available for hostel referrals.",
     couponText: "USE COUPON: HOSTELLOVE",
+    referralCodePrefix: "APBOYS",
+    referralEnabled: true,
     buttonText: "Claim Offer",
-    bannerUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1800&q=90"
+    bannerUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1800&q=90",
+    foodImages: [
+      "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?auto=format&fit=crop&w=900&q=85",
+      "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=900&q=85"
+    ],
+    websiteLink: "https://magneetoz.com",
+    whatsappLink: "https://wa.me/",
+    instagramLink: "https://instagram.com/",
+    qrCodes: [],
+    videos: []
   }
 };
 

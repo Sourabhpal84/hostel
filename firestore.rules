@@ -51,6 +51,22 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /centralMagneetoz/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /centralMagneetozSites/{siteId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /centralMagneetozEvents/{eventId} {
+      allow create: if true;
+      allow read: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
     match /users/{userId} {
       allow read: if isAdmin() || request.auth.uid == userId;
       allow write: if isAdmin();
