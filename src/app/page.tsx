@@ -75,14 +75,20 @@ export default function Home() {
     const unsubscribeContent = listenCentralMagneetoz((magneetoz) => {
       setStore((current) => ({ ...current, settings: { ...current.settings, magneetoz: { ...current.settings.magneetoz, ...magneetoz } } }));
     });
+    return () => {
+      unsubscribeContent();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (view !== "magneetoz") return;
     const unsubscribeEvents = listenMagneetozEvents((events) => {
       setStore((current) => ({ ...current, magneetozEvents: events }));
     });
     return () => {
-      unsubscribeContent();
       unsubscribeEvents();
     };
-  }, []);
+  }, [view]);
 
   const activeStudent = store.students.find((student) => student.studentId === activeStudentId) || store.students[0];
 

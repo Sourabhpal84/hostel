@@ -13,7 +13,7 @@ export function listenCentralMagneetoz(callback: (magneetoz: SiteSettings["magne
   return onSnapshot(doc(db, magneetozCollections.settingsDoc), (snapshot) => {
     const data = snapshot.data();
     if (data?.magneetoz) callback(data.magneetoz as SiteSettings["magneetoz"]);
-  });
+  }, () => undefined);
 }
 
 export async function saveCentralMagneetoz(magneetoz: SiteSettings["magneetoz"]) {
@@ -30,7 +30,7 @@ export function listenMagneetozEvents(callback: (events: MagneetozReferralEvent[
   if (!db) return () => undefined;
   return onSnapshot(query(collection(db, magneetozCollections.events), orderBy("createdAt", "desc")), (snapshot) => {
     callback(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as MagneetozReferralEvent));
-  });
+  }, () => undefined);
 }
 
 export async function registerConnectedPgSite(site: ConnectedPgSite) {
