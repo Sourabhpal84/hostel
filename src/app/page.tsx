@@ -346,9 +346,9 @@ export default function Home() {
       {message && <div className="mx-5 mt-4 rounded-lg bg-amber-100 px-4 py-3 font-bold text-amber-950 lg:mx-14">{message}</div>}
       {store.settings.magneetoz.enabled && <MagneetozBanner settings={store.settings} pgSourceId={pgSourceId} onTrack={trackMagneetozClick} />}
       {view === "public" && <PublicSite store={store} />}
-      {view === "adminLogin" && <Login title="Admin Login" hint="Use your admin email and password." onSubmit={submitAdminLogin} />}
-      {view === "studentLogin" && <Login title="Student Login" hint="Use the email and password created by admin." onSubmit={submitStudentLogin} />}
-      {view === "magneetozLogin" && <Login title="Magneetoz Login" hint="Use Magneetoz owner login." onSubmit={submitMagneetozLogin} />}
+      {view === "adminLogin" && <Login title="Admin Login" hint="Use your admin email and password." onSubmit={submitAdminLogin} onClose={() => setView("public")} />}
+      {view === "studentLogin" && <Login title="Student Login" hint="Use the email and password created by admin." onSubmit={submitStudentLogin} onClose={() => setView("public")} />}
+      {view === "magneetozLogin" && <Login title="Magneetoz Login" hint="Use Magneetoz owner login." onSubmit={submitMagneetozLogin} onClose={() => setView("public")} />}
       {view === "admin" && (
         <AdminDashboard
           store={store}
@@ -428,18 +428,27 @@ function Header({ view, setView, dark, setDark, settings }: { view: View; setVie
   );
 }
 
-function Login({ title, hint, onSubmit }: { title: string; hint: string; onSubmit: (formData: FormData) => void | Promise<void> }) {
+function Login({ title, hint, onSubmit, onClose }: { title: string; hint: string; onSubmit: (formData: FormData) => void | Promise<void>; onClose: () => void }) {
   return (
-    <section className="section mx-auto max-w-xl">
-      <form action={onSubmit} className="premium-card grid gap-4 p-7 lg:p-8">
-        <p className="eyebrow">Secure Access</p>
-        <h1 className="text-4xl font-black tracking-tight">{title}</h1>
-        <p className="text-zinc-500">{hint}</p>
-        <input className="field" name="email" type="email" placeholder="Email" required />
-        <input className="field" name="password" type="password" placeholder="Password" required />
-        <button className="btn btn-dark">Login</button>
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-zinc-950/70 p-4 backdrop-blur-xl">
+      <form action={onSubmit} className="w-full max-w-md overflow-hidden rounded-[28px] border border-white/50 bg-[#fbf7ef] text-zinc-950 shadow-[0_40px_120px_rgba(0,0,0,0.35)]">
+        <div className="bg-[radial-gradient(circle_at_10%_0%,rgba(245,189,71,0.35),transparent_30%),linear-gradient(135deg,#111111,#30200f)] p-6 text-white">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.1em] text-amber-300">Secure Access</p>
+              <h1 className="mt-2 text-4xl font-black tracking-tight">{title}</h1>
+            </div>
+            <button type="button" className="rounded-2xl bg-white/10 px-3 py-2 font-black text-white backdrop-blur-xl transition hover:bg-white hover:text-zinc-950" onClick={onClose}>Close</button>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-white/72">{hint}</p>
+        </div>
+        <div className="grid gap-4 p-6">
+          <input className="field" name="email" type="email" placeholder="Email" required />
+          <input className="field" name="password" type="password" placeholder="Password" required />
+          <button className="btn btn-dark">Login</button>
+        </div>
       </form>
-    </section>
+    </div>
   );
 }
 
@@ -596,7 +605,10 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, sele
         </form>
 
         <div className="premium-card p-5 text-zinc-950 lg:col-span-2">
-          <h2 className="text-2xl font-black">Students, Fees & Payment History</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-2xl font-black">Students, Fees & Payment History</h2>
+            <button className="btn btn-dark" onClick={() => downloadAllStudentsPdf(store)}>Download All PDF</button>
+          </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-4">
             <div className="rounded-2xl bg-emerald-50 p-4 shadow-sm"><strong className="block text-2xl">{store.students.filter((student) => student.status !== "Left" && balance(student) === 0).length}</strong><span className="text-sm text-emerald-800">Students fully paid</span></div>
             <div className="rounded-2xl bg-rose-50 p-4 shadow-sm"><strong className="block text-2xl">{store.students.filter((student) => student.status !== "Left" && balance(student) > 0).length}</strong><span className="text-sm text-rose-800">Students pending</span></div>
@@ -751,6 +763,7 @@ function StudentDetailModal({ student, store, patchStore, addPayment, onClose }:
             <select className="field" name="mode"><option>Cash</option><option>UPI</option><option>Bank</option><option>Razorpay</option></select>
             <button className="btn btn-dark">Update Payment</button>
           </form>
+          <button className="btn btn-dark" onClick={() => downloadStudentPdf(store, student)}>Download Student PDF</button>
           <form className="premium-card grid gap-3 p-5" action={(data) => {
             const alert = String(data.get("alert"));
             patchStore({ students: store.students.map((item) => item.studentId === student.studentId ? { ...item, alerts: [alert, ...(item.alerts || [])] } : item) });
@@ -939,6 +952,7 @@ function StudentDashboard({ store, student, patchStore, payOnline }: { store: St
         </div>
       )}
       {(student.alerts || []).length > 0 && <div className="premium-card mt-6 p-5 text-zinc-950"><h2 className="text-2xl font-black">Admin Alerts</h2>{student.alerts?.map((alert, index) => <p key={`${alert}-${index}`} className="mt-3 rounded-lg bg-amber-50 p-3 font-bold text-amber-950">{alert}</p>)}</div>}
+      <button className="btn btn-dark mt-6" onClick={() => downloadStudentPdf(store, student)}>Download My PDF</button>
       <div className="mt-8 grid gap-5 lg:grid-cols-3">
         <div className="premium-card p-5 text-zinc-950"><h2 className="text-2xl font-black">Profile</h2><p className="mt-3 text-zinc-600">{student.studentId} | Room {student.roomNumber}, Bed {student.bedNumber}</p><p>{student.roomType} | {student.accommodationType}</p></div>
         <div className="premium-card p-5 text-zinc-950"><h2 className="text-2xl font-black">Fees</h2><p>Total Due Till Now: {money(totalDue(student))}</p><p>Paid: {money(student.paidAmount)}</p><p>Remaining: {money(pending)}</p>{pending > 0 && <button className="btn btn-dark mt-4" onClick={() => payOnline(student)}>Pay Online</button>}</div>
@@ -1090,4 +1104,127 @@ function serializePgStore(store: Store): Store {
       magneetoz: seedStore.settings.magneetoz
     }
   };
+}
+
+function downloadAllStudentsPdf(store: Store) {
+  const rows = store.students.map((student) => `
+    <section class="student">
+      ${studentReportHtml(store, student)}
+    </section>
+  `).join("");
+  openPdfWindow(store.settings.pgName, "All Students Fee & Admission Report", rows);
+}
+
+function downloadStudentPdf(store: Store, student: Student) {
+  openPdfWindow(store.settings.pgName, `${student.fullName} - Student Report`, studentReportHtml(store, student));
+}
+
+function studentReportHtml(store: Store, student: Student) {
+  const payments = student.paymentHistory.length
+    ? student.paymentHistory.map((payment) => `
+      <tr>
+        <td>${escapeHtml(payment.date)}</td>
+        <td>${escapeHtml(payment.mode)}</td>
+        <td>${escapeHtml(payment.receiptId)}</td>
+        <td>${money(payment.amount)}</td>
+      </tr>
+    `).join("")
+    : `<tr><td colspan="4">No payment recorded.</td></tr>`;
+
+  return `
+    <div class="identity">
+      <div>
+        <p class="label">Student Name</p>
+        <h2>${escapeHtml(student.fullName)}</h2>
+      </div>
+      <div class="status">${escapeHtml(student.status || "Active")}</div>
+    </div>
+    <div class="grid">
+      <div><span>Student ID</span><strong>${escapeHtml(student.studentId)}</strong></div>
+      <div><span>Father Name</span><strong>${escapeHtml(student.fatherName)}</strong></div>
+      <div><span>Phone</span><strong>${escapeHtml(student.phone)}</strong></div>
+      <div><span>Email</span><strong>${escapeHtml(student.email)}</strong></div>
+      <div><span>Room / Bed</span><strong>${escapeHtml(student.roomNumber)} / ${escapeHtml(student.bedNumber)}</strong></div>
+      <div><span>Room Type</span><strong>${escapeHtml(student.roomType)} | ${escapeHtml(student.accommodationType)}</strong></div>
+      <div><span>Joining Date</span><strong>${escapeHtml(student.joiningDate)}</strong></div>
+      <div><span>Exit Date</span><strong>${escapeHtml(student.exitDate || "-")}</strong></div>
+      <div><span>Total Due Till Now</span><strong>${money(totalDue(student))}</strong></div>
+      <div><span>Deposited</span><strong>${money(student.paidAmount)}</strong></div>
+      <div><span>Pending</span><strong>${money(balance(student))}</strong></div>
+      <div><span>Advance Credit</span><strong>${money(advanceCredit(student))}</strong></div>
+    </div>
+    <h3>Payment History</h3>
+    <table>
+      <thead><tr><th>Date</th><th>Mode</th><th>Receipt</th><th>Amount</th></tr></thead>
+      <tbody>${payments}</tbody>
+    </table>
+  `;
+}
+
+function openPdfWindow(hostelName: string, title: string, body: string) {
+  const printWindow = window.open("", "_blank", "width=900,height=1100");
+  if (!printWindow) {
+    window.alert("Popup blocked. Please allow popups to download PDF.");
+    return;
+  }
+  printWindow.document.write(`
+    <!doctype html>
+    <html>
+      <head>
+        <title>${escapeHtml(title)}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { margin: 0; background: #f6f2ea; color: #161616; font-family: Arial, sans-serif; }
+          .page { padding: 32px; }
+          .header { background: linear-gradient(135deg, #111, #3a260e); color: white; border-radius: 24px; padding: 28px; margin-bottom: 24px; }
+          .header p { margin: 0; color: #f5bd47; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; }
+          .header h1 { margin: 8px 0 0; font-size: 34px; }
+          .header h2 { margin: 8px 0 0; font-size: 18px; color: rgba(255,255,255,.75); }
+          .student { background: white; border: 1px solid #e7ded0; border-radius: 20px; padding: 22px; margin-bottom: 22px; page-break-inside: avoid; }
+          .identity { display: flex; justify-content: space-between; gap: 18px; align-items: start; border-bottom: 1px solid #eee3d5; padding-bottom: 16px; margin-bottom: 16px; }
+          .label, .grid span { color: #8a7560; font-size: 12px; margin: 0 0 5px; text-transform: uppercase; font-weight: 900; letter-spacing: .05em; }
+          h2 { margin: 0; font-size: 26px; }
+          h3 { margin: 20px 0 10px; }
+          .status { background: #f5bd47; padding: 9px 13px; border-radius: 999px; font-weight: 900; }
+          .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+          .grid div { background: #fbf7ef; border: 1px solid #eee3d5; border-radius: 14px; padding: 12px; }
+          .grid strong { display: block; font-size: 15px; }
+          table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 14px; }
+          th { background: #151515; color: white; text-align: left; padding: 11px; font-size: 13px; }
+          td { border-bottom: 1px solid #eee3d5; padding: 11px; font-size: 13px; }
+          @media print {
+            body { background: white; }
+            .page { padding: 0; }
+            .student { break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <main class="page">
+          <section class="header">
+            <p>Premium Hostel Report</p>
+            <h1>${escapeHtml(hostelName)}</h1>
+            <h2>${escapeHtml(title)}</h2>
+          </section>
+          ${body}
+        </main>
+        <script>
+          window.onload = () => {
+            window.focus();
+            window.print();
+          };
+        </script>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
+function escapeHtml(value: string) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
