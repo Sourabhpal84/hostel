@@ -63,6 +63,8 @@ NEXT_PUBLIC_PG_SOURCE_ID=UNIQUE_PG_CODE
 
 The promotion link automatically appends `source` and `ref` query parameters so Magneetoz can identify which PG generated the click/order.
 
+For the exact future-PG rollout process, see `MULTI_PG_PLAYBOOK.md`.
+
 Suggested Firestore collections:
 
 - `users`: `{ uid, role: "admin" | "student", email, studentId? }`

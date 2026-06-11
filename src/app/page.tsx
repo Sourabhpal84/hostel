@@ -63,6 +63,8 @@ export default function Home() {
   useEffect(() => {
     const saved = window.localStorage.getItem("premiumPgStore");
     if (saved) setStore(normalizeStore(JSON.parse(saved)));
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("magneetoz") === "owner") setView("magneetozLogin");
   }, []);
 
   useEffect(() => {
@@ -118,7 +120,7 @@ export default function Home() {
     void trackCentralMagneetozEvent(centralEvent);
   }
 
-  function addStudent(formData: FormData) {
+  async function addStudent(formData: FormData) {
     const student: Student = {
       id: crypto.randomUUID(),
       studentId: `IPG-${1000 + store.students.length + 1}`,
@@ -143,8 +145,28 @@ export default function Home() {
     const rooms = store.rooms.map((room) =>
       room.roomNumber === student.roomNumber ? { ...room, occupiedBeds: Math.min(room.totalBeds, room.occupiedBeds + 1) } : room
     );
+    let loginCreated = false;
+    try {
+      const response = await fetch("/api/admin/create-student", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: student.email, password: student.password, displayName: student.fullName, student })
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        setMessage(result.error || "Firebase student login create nahi ho paya. Env setup check karo.");
+      } else {
+        const result = await response.json();
+        student.id = result.uid || student.id;
+        loginCreated = true;
+      }
+    } catch {
+      setMessage("Student local add ho gaya, lekin Firebase Auth create nahi hua. Firebase Admin env setup karo.");
+    }
     patchStore({ students: [student, ...store.students], rooms });
-    setMessage(`Admission added. Student login: ${student.email} / ${student.password}`);
+    if (loginCreated) {
+      setMessage(`Admission added. Student can login with ${student.email} / ${student.password}`);
+    }
   }
 
   function addPayment(studentId: string, amount: number, mode: Payment["mode"] = "Cash") {
@@ -337,7 +359,6 @@ function Header({ view, setView, dark, setDark, pgName }: { view: View; setView:
         ) : (
           <>
             <button className="btn btn-light" onClick={() => go("studentLogin")}>Student Login</button>
-            <button className="btn btn-light" onClick={() => go("magneetozLogin")}>Magneetoz</button>
             <button className="btn btn-dark" onClick={() => go("adminLogin")}>Admin Login</button>
           </>
         )}
@@ -352,7 +373,6 @@ function Header({ view, setView, dark, setDark, pgName }: { view: View; setView:
           ) : (
             <>
               <button className="btn btn-light justify-start" onClick={() => go("studentLogin")}>Student Login</button>
-              <button className="btn btn-light justify-start" onClick={() => go("magneetozLogin")}>Magneetoz</button>
               <button className="btn btn-dark justify-start" onClick={() => go("adminLogin")}>Admin Login</button>
             </>
           )}
@@ -381,22 +401,22 @@ function MagneetozBanner({ settings, pgSourceId, onTrack }: { settings: SiteSett
   const referralCode = settings.magneetoz.referralEnabled ? `${settings.magneetoz.referralCodePrefix}-${pgSourceId || "PG"}` : pgSourceId || "PG";
   const targetLink = `${settings.magneetoz.websiteLink}?source=${encodeURIComponent(pgSourceId || "PG")}&ref=${encodeURIComponent(referralCode)}`;
   return (
-    <section className="section py-7">
-      <a href={targetLink} onClick={onTrack} target="_blank" rel="noreferrer" className="group relative block min-h-[430px] overflow-hidden rounded-lg bg-zinc-950 text-white shadow-2xl sm:min-h-[520px] lg:min-h-[68vh]">
+    <section className="px-4 py-4 lg:px-14 lg:py-7">
+      <a href={targetLink} onClick={onTrack} target="_blank" rel="noreferrer" className="group relative block h-[230px] overflow-hidden rounded-lg bg-zinc-950 text-white shadow-2xl sm:h-[320px] lg:h-auto lg:min-h-[68vh]">
         <img src={settings.magneetoz.bannerUrl} alt="Magneetoz promotional offer" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />
         <div className="absolute inset-0 bg-gradient-to-r from-black/88 via-black/58 to-black/10" />
-        <div className="relative flex min-h-[430px] max-w-4xl flex-col justify-center p-5 sm:min-h-[520px] lg:min-h-[68vh] lg:p-16">
-          <p className="eyebrow">Exclusive Restaurant Promotion</p>
-          <h2 className="mt-3 text-4xl font-black leading-none sm:text-5xl lg:text-8xl">{settings.magneetoz.restaurantName}</h2>
-          <p className="mt-5 max-w-2xl text-xl font-black text-amber-200 lg:mt-7 lg:text-2xl">{settings.magneetoz.title}</p>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-white/80 lg:text-lg lg:leading-8">{settings.magneetoz.description}</p>
-          <p className="mt-3 max-w-2xl text-base font-bold text-white">{settings.magneetoz.discountDetails}</p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <span className="rounded-lg border border-amber-200/50 bg-amber-200 px-4 py-3 text-base font-black text-zinc-950 shadow-xl lg:px-5 lg:py-4 lg:text-lg">{settings.magneetoz.couponText}</span>
-            <span className="rounded-lg border border-white/30 bg-white/10 px-4 py-3 text-base font-black text-white">REF: {referralCode}</span>
-            <span className="btn bg-white text-zinc-950">{settings.magneetoz.buttonText}</span>
+        <div className="relative flex h-full max-w-4xl flex-col justify-center p-4 lg:min-h-[68vh] lg:p-16">
+          <p className="text-[11px] font-black uppercase text-amber-500 lg:text-sm">Exclusive Restaurant Promotion</p>
+          <h2 className="mt-2 max-w-[280px] text-2xl font-black leading-none sm:max-w-lg sm:text-4xl lg:max-w-4xl lg:text-8xl">{settings.magneetoz.restaurantName}</h2>
+          <p className="mt-3 max-w-[270px] text-base font-black leading-snug text-amber-200 sm:max-w-lg sm:text-xl lg:mt-7 lg:max-w-2xl lg:text-2xl">{settings.magneetoz.title}</p>
+          <p className="mt-4 hidden max-w-2xl text-base leading-7 text-white/80 sm:block lg:text-lg lg:leading-8">{settings.magneetoz.description}</p>
+          <p className="mt-3 hidden max-w-2xl text-base font-bold text-white lg:block">{settings.magneetoz.discountDetails}</p>
+          <div className="mt-4 flex flex-wrap items-center gap-2 lg:mt-8 lg:gap-3">
+            <span className="rounded-lg border border-amber-200/50 bg-amber-200 px-3 py-2 text-sm font-black text-zinc-950 shadow-xl lg:px-5 lg:py-4 lg:text-lg">{settings.magneetoz.couponText}</span>
+            <span className="hidden rounded-lg border border-white/30 bg-white/10 px-4 py-3 text-base font-black text-white sm:inline-flex">REF: {referralCode}</span>
+            <span className="rounded-lg bg-white px-3 py-2 text-sm font-black text-zinc-950 lg:px-5 lg:py-3 lg:text-base">{settings.magneetoz.buttonText}</span>
           </div>
-          <p className="mt-5 text-sm font-bold uppercase text-white/70">Click anywhere on this offer to visit magneetoz.com</p>
+          <p className="mt-5 hidden text-sm font-bold uppercase text-white/70 lg:block">Click anywhere on this offer to visit magneetoz.com</p>
         </div>
       </a>
     </section>
@@ -464,7 +484,7 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, sele
   store: Store;
   stats: { occupied: number; vacant: number; collection: number; pending: number; complaintsPending: number; complaintsResolved: number };
   patchStore: (patch: Partial<Store>) => void;
-  addStudent: (formData: FormData) => void;
+  addStudent: (formData: FormData) => void | Promise<void>;
   addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void;
   selectedStudentId: string;
   setSelectedStudentId: (id: string) => void;
