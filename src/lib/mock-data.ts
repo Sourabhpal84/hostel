@@ -92,7 +92,8 @@ export const students: Student[] = [
     securityAmount: 5000,
     paidAmount: 12000,
     dueDate: "2026-07-07",
-    paymentHistory: [{ id: "pay-1", amount: 12000, date: "2026-06-01", mode: "Cash", receiptId: "REC-1001" }]
+    paymentHistory: [{ id: "pay-1", amount: 12000, date: "2026-06-01", mode: "Cash", receiptId: "REC-1001" }],
+    status: "Active"
   }
 ];
 

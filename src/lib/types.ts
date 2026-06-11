@@ -21,6 +21,8 @@ export type Student = {
   dueDate: string;
   paymentHistory: Payment[];
   alerts?: string[];
+  status?: "Active" | "Left";
+  exitDate?: string;
 };
 
 export type Payment = {

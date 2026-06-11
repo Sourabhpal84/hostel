@@ -139,8 +139,9 @@ export default function Home() {
       rentAmount: Number(formData.get("rentAmount")),
       securityAmount: Number(formData.get("securityAmount")),
       paidAmount: Number(formData.get("paidAmount")),
-      dueDate: String(formData.get("dueDate")),
-      paymentHistory: []
+      dueDate: nextBillingDate(String(formData.get("joiningDate"))),
+      paymentHistory: [],
+      status: "Active"
     };
     const rooms = store.rooms.map((room) =>
       room.roomNumber === student.roomNumber ? { ...room, occupiedBeds: Math.min(room.totalBeds, room.occupiedBeds + 1) } : room
@@ -296,7 +297,7 @@ export default function Home() {
 
   return (
     <main className={shellClass}>
-      <Header view={view} setView={setView} dark={dark} setDark={setDark} pgName={store.settings.pgName} />
+      <Header view={view} setView={setView} dark={dark} setDark={setDark} settings={store.settings} />
       {message && <div className="mx-5 mt-4 rounded-lg bg-amber-100 px-4 py-3 font-bold text-amber-950 lg:mx-14">{message}</div>}
       {store.settings.magneetoz.enabled && <MagneetozBanner settings={store.settings} pgSourceId={pgSourceId} onTrack={trackMagneetozClick} />}
       {view === "public" && <PublicSite store={store} />}
@@ -331,25 +332,25 @@ export default function Home() {
   );
 }
 
-function Header({ view, setView, dark, setDark, pgName }: { view: View; setView: (view: View) => void; dark: boolean; setDark: (value: boolean) => void; pgName: string }) {
+function Header({ view, setView, dark, setDark, settings }: { view: View; setView: (view: View) => void; dark: boolean; setDark: (value: boolean) => void; settings: SiteSettings }) {
   const [open, setOpen] = useState(false);
   const go = (next: View) => {
     setView(next);
     setOpen(false);
   };
   return (
-    <header className="sticky top-0 z-50 border-b border-black/10 bg-white/90 px-4 py-3 text-zinc-950 backdrop-blur-xl lg:px-14">
+    <header className="sticky top-0 z-50 border-b border-black/10 bg-white/75 px-4 py-3 text-zinc-950 shadow-[0_14px_40px_rgba(20,20,20,0.06)] backdrop-blur-2xl lg:px-14">
       <div className="flex items-center justify-between gap-3">
       <button className="flex items-center gap-3" onClick={() => go("public")}>
-        <span className="grid h-11 w-11 place-items-center rounded-lg bg-zinc-950 font-black text-amber-200">AP</span>
+        {settings.logoUrl ? <img src={settings.logoUrl} alt={`${settings.pgName} logo`} className="h-12 w-12 rounded-2xl object-cover shadow-lg" /> : <span className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-zinc-950 to-amber-950 font-black text-amber-200 shadow-xl">AP</span>}
         <span className="text-left">
-          <strong className="block text-lg">{pgName}</strong>
+          <strong className="block bg-gradient-to-r from-zinc-950 via-amber-800 to-zinc-950 bg-clip-text text-xl font-black tracking-tight text-transparent lg:text-2xl">{settings.pgName}</strong>
           <small className="text-zinc-500">Boys Hostel Management</small>
         </span>
       </button>
-      <nav className="hidden gap-6 font-bold lg:flex">
+      <nav className="hidden items-center gap-1 rounded-2xl border border-black/10 bg-white/60 p-1 font-bold shadow-sm backdrop-blur-xl lg:flex">
         {["About", "Rooms", "Gallery", "Facilities", "Food Timetable", "Notices", "Contact"].map((item) => (
-          <a key={item} href={`#${item.toLowerCase().replaceAll(" ", "-")}`}>{item}</a>
+          <a className="rounded-xl px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-950 hover:text-white" key={item} href={`#${item.toLowerCase().replaceAll(" ", "-")}`}>{item}</a>
         ))}
       </nav>
       <div className="hidden gap-2 lg:flex">
@@ -366,7 +367,7 @@ function Header({ view, setView, dark, setDark, pgName }: { view: View; setView:
       <button className="btn btn-light lg:hidden" onClick={() => setOpen(!open)} aria-label="Open menu"><Menu size={18} /></button>
       </div>
       {open && (
-        <div className="mt-3 grid gap-2 rounded-lg border border-black/10 bg-white p-3 lg:hidden">
+        <div className="mt-3 grid gap-2 rounded-2xl border border-black/10 bg-white/95 p-3 shadow-2xl backdrop-blur-xl lg:hidden">
           <button className="btn btn-light justify-start" onClick={() => setDark(!dark)}><Moon size={18} /> Dark Mode</button>
           {view === "admin" || view === "student" || view === "magneetoz" ? (
             <button className="btn btn-dark justify-start" onClick={() => go("public")}><LogOut size={17} /> Logout</button>
@@ -385,9 +386,9 @@ function Header({ view, setView, dark, setDark, pgName }: { view: View; setView:
 function Login({ title, hint, onSubmit }: { title: string; hint: string; onSubmit: (formData: FormData) => void | Promise<void> }) {
   return (
     <section className="section mx-auto max-w-xl">
-      <form action={onSubmit} className="premium-card grid gap-4 p-6">
+      <form action={onSubmit} className="premium-card grid gap-4 p-7 lg:p-8">
         <p className="eyebrow">Secure Access</p>
-        <h1 className="text-4xl font-black">{title}</h1>
+        <h1 className="text-4xl font-black tracking-tight">{title}</h1>
         <p className="text-zinc-500">{hint}</p>
         <input className="field" name="email" type="email" placeholder="Email" required />
         <input className="field" name="password" type="password" placeholder="Password" required />
@@ -426,47 +427,48 @@ function MagneetozBanner({ settings, pgSourceId, onTrack }: { settings: SiteSett
 function PublicSite({ store }: { store: Store }) {
   return (
     <>
-      <section className="relative min-h-[560px] overflow-hidden lg:min-h-[78vh]">
+      <section className="relative mx-3 mt-4 min-h-[560px] overflow-hidden rounded-[28px] lg:mx-8 lg:min-h-[78vh]">
         <img src={store.settings.heroBanner} alt="Premium PG room" className="absolute inset-0 h-full w-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/45 to-transparent" />
+        <div className="absolute inset-0 bg-[linear-gradient(105deg,rgba(0,0,0,0.86),rgba(0,0,0,0.50)_52%,rgba(0,0,0,0.08))]" />
+        <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black/45 to-transparent" />
         <div className="relative max-w-4xl px-6 py-20 text-white lg:px-20 lg:py-36">
-          <p className="eyebrow">Luxury Hotel Style PG</p>
-          <h1 className="text-5xl font-black leading-none lg:text-8xl">{store.settings.pgName}</h1>
-          <p className="mt-5 max-w-2xl text-base leading-7 text-white/86 lg:text-lg lg:leading-8">{store.settings.about}</p>
+          <p className="inline-flex rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.08em] text-amber-200 backdrop-blur-xl">Luxury Hotel Style PG</p>
+          <h1 className="mt-5 text-5xl font-black leading-none tracking-tight lg:text-8xl">{store.settings.pgName}</h1>
+          <p className="mt-5 max-w-2xl text-base leading-7 text-white/86 lg:text-xl lg:leading-9">{store.settings.about}</p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <a className="btn bg-amber-300 text-zinc-950" href="#rooms">Explore Rooms</a>
-            <a className="btn border border-white/30 bg-white/10 text-white" href="#contact">Contact PG</a>
+            <a className="btn bg-amber-300 text-zinc-950 shadow-[0_18px_50px_rgba(245,189,71,0.35)]" href="#rooms">Explore Rooms</a>
+            <a className="btn border border-white/30 bg-white/10 text-white backdrop-blur-xl" href="#contact">Contact PG</a>
           </div>
         </div>
       </section>
       <section id="facilities" className="section">
         <p className="eyebrow">Facilities</p>
-        <h2 className="mt-2 max-w-3xl text-4xl font-black">Comfort, safety, and premium student living in one place.</h2>
+        <h2 className="mt-2 max-w-3xl text-4xl font-black tracking-tight lg:text-5xl">Comfort, safety, and premium student living in one place.</h2>
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {store.settings.facilities.map((item) => <div className="premium-card p-5 font-bold text-zinc-950" key={item}><CheckCircle2 className="mb-4 text-emerald-700" />{item}</div>)}
+          {store.settings.facilities.map((item) => <div className="premium-card p-6 font-bold text-zinc-950" key={item}><CheckCircle2 className="mb-4 rounded-2xl bg-emerald-50 p-2 text-emerald-700" size={40} />{item}</div>)}
         </div>
       </section>
-      <section id="rooms" className="section bg-zinc-950 text-white">
+      <section id="rooms" className="section bg-[radial-gradient(circle_at_10%_0%,rgba(245,189,71,0.18),transparent_28%),linear-gradient(135deg,#101010,#21180d)] text-white">
         <p className="eyebrow">Room Types</p>
-        <h2 className="mt-2 text-4xl font-black">Rooms, photos, rent, beds and videos.</h2>
+        <h2 className="mt-2 text-4xl font-black tracking-tight lg:text-5xl">Rooms, photos, rent, beds and videos.</h2>
         <div className="mt-8 grid gap-5 lg:grid-cols-3">
           {store.rooms.map((room) => <RoomCard key={room.id} room={room} />)}
         </div>
       </section>
       <section id="food-timetable" className="section">
         <p className="eyebrow">Food Timetable</p>
-        <h2 className="mt-2 text-4xl font-black">Weekly breakfast, lunch and dinner.</h2>
+        <h2 className="mt-2 text-4xl font-black tracking-tight lg:text-5xl">Weekly breakfast, lunch and dinner.</h2>
         <TodayMeal settings={store.settings} />
         <div className="mt-8 grid gap-3 lg:grid-cols-7">
           {days.map((day) => <MealCard key={day} day={day} settings={store.settings} />)}
         </div>
       </section>
-      <section id="notices" className="section bg-white text-zinc-950">
+      <section id="notices" className="section bg-white/70 text-zinc-950 backdrop-blur-xl">
         <p className="eyebrow">Notices</p>
         <div className="mt-6 grid gap-4 lg:grid-cols-2">{store.notices.map((notice) => <NoticeCard key={notice.id} notice={notice} />)}</div>
       </section>
       <section id="contact" className="section">
-        <div className="premium-card grid gap-6 p-7 text-zinc-950 lg:grid-cols-2">
+        <div className="premium-card grid gap-6 p-7 text-zinc-950 lg:grid-cols-2 lg:p-10">
           <div>
             <p className="eyebrow">Contact</p>
             <h2 className="mt-2 text-4xl font-black">Visit or call for admission.</h2>
@@ -500,8 +502,9 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, sele
     return matchesQuery && matchesFilter;
   });
   const selectedStudent = store.students.find((student) => student.studentId === selectedStudentId) || filteredStudents[0];
+  const activeStudents = store.students.filter((student) => student.status !== "Left");
   const statItems: Array<[string, string | number, LucideIcon]> = [
-    ["Total Students", store.students.length, BedDouble],
+    ["Active Students", activeStudents.length, BedDouble],
     ["Occupied Beds", stats.occupied, Shield],
     ["Vacant Beds", stats.vacant, BedDouble],
     ["Monthly Collection", money(stats.collection), CreditCard],
@@ -528,7 +531,11 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, sele
       <div className="mt-8 grid gap-5 lg:grid-cols-3">
         <form action={addStudent} className="premium-card grid gap-3 p-5 text-zinc-950">
           <h2 className="text-2xl font-black">New Admission</h2>
-          {["fullName", "fatherName", "phone", "email", "password", "aadhaar", "address", "joiningDate", "roomNumber", "bedNumber", "rentAmount", "securityAmount", "paidAmount", "dueDate"].map((name) => (
+          {["fullName", "fatherName", "phone", "email", "password", "aadhaar", "address"].map((name) => (
+            <input key={name} name={name} className="field" placeholder={labelize(name)} required />
+          ))}
+          <label className="grid gap-1 text-sm font-bold">Joining Date <input name="joiningDate" type="date" className="field" required /></label>
+          {["roomNumber", "bedNumber", "rentAmount", "securityAmount", "paidAmount"].map((name) => (
             <input key={name} name={name} className="field" placeholder={labelize(name)} required />
           ))}
           <select name="roomType" className="field"><option>Single Seater</option><option>Double Seater</option><option>Triple Seater</option></select>
@@ -556,8 +563,9 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, sele
                   <div>
                     <strong>{student.fullName}</strong>
                     <p className="text-sm text-zinc-500">{student.studentId} | {student.email} | Room {student.roomNumber}, Bed {student.bedNumber}</p>
-                    <p className="text-sm">Paid {money(student.paidAmount)} | Remaining {money(balance(student))} | Due {student.dueDate}</p>
+                    <p className="text-sm">Paid {money(student.paidAmount)} | Remaining {money(balance(student))} | Due {nextBillingDate(student.joiningDate)}</p>
                     <p className={`mt-1 text-sm font-black ${balance(student) === 0 ? "text-emerald-700" : "text-rose-700"}`}>{balance(student) === 0 ? "This month payment done" : `${money(balance(student))} pending`}</p>
+                    {student.status === "Left" && <p className="mt-1 text-sm font-black text-zinc-500">Left on {student.exitDate}</p>}
                   </div>
                   <span className="btn btn-light">Open Details</span>
                 </div>
@@ -580,9 +588,10 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, sele
 function AdminContent({ store, patchStore }: { store: Store; patchStore: (patch: Partial<Store>) => void }) {
   return (
     <>
-      <form className="premium-card grid gap-3 p-5 text-zinc-950" action={(data) => patchStore({ settings: { ...store.settings, pgName: String(data.get("pgName") || store.settings.pgName), about: String(data.get("about") || store.settings.about), heroBanner: String(data.get("heroBanner") || store.settings.heroBanner), contactNumber: String(data.get("contactNumber") || store.settings.contactNumber), address: String(data.get("address") || store.settings.address) } })}>
+      <form className="premium-card grid gap-3 p-5 text-zinc-950" action={(data) => patchStore({ settings: { ...store.settings, pgName: String(data.get("pgName") || store.settings.pgName), logoUrl: String(data.get("logoUrl") || store.settings.logoUrl), about: String(data.get("about") || store.settings.about), heroBanner: String(data.get("heroBanner") || store.settings.heroBanner), contactNumber: String(data.get("contactNumber") || store.settings.contactNumber), address: String(data.get("address") || store.settings.address) } })}>
         <h2 className="text-2xl font-black">Website Settings</h2>
         <input name="pgName" className="field" placeholder="PG Name" />
+        <input name="logoUrl" className="field" placeholder="Logo image URL" />
         <textarea name="about" className="field" placeholder="About content" />
         <input name="heroBanner" className="field" placeholder="Hero banner URL" />
         <input name="contactNumber" className="field" placeholder="Contact number" />
@@ -645,9 +654,13 @@ function StudentFeeDetail({ student, store, patchStore, addPayment }: { student:
             <p><strong>Email:</strong> {student.email}</p>
             <p><strong>Room/Bed:</strong> {student.roomNumber} / {student.bedNumber}</p>
             <p><strong>Type:</strong> {student.roomType} | {student.accommodationType}</p>
-            <p><strong>Total:</strong> {money(student.rentAmount + student.securityAmount)}</p>
+            <p><strong>Status:</strong> {student.status || "Active"}</p>
+            <p><strong>Joining Date:</strong> {student.joiningDate}</p>
+            {student.exitDate && <p><strong>Exit Date:</strong> {student.exitDate}</p>}
+            <p><strong>Total Due Till Now:</strong> {money(totalDue(student))}</p>
             <p><strong>Paid:</strong> {money(student.paidAmount)}</p>
             <p><strong>Pending:</strong> {money(balance(student))}</p>
+            <p><strong>Next Billing Date:</strong> {student.status === "Left" ? "Stopped" : nextBillingDate(student.joiningDate)}</p>
           </div>
         </div>
         <div className="grid gap-4">
@@ -665,6 +678,19 @@ function StudentFeeDetail({ student, store, patchStore, addPayment }: { student:
             <textarea className="field" name="alert" defaultValue={`Please complete your pending fee: ${money(balance(student))}.`} />
             <button className="btn btn-dark">Send Alert</button>
           </form>
+          {student.status !== "Left" && (
+            <form className="grid gap-3 rounded-lg border border-black/10 p-4" action={(data) => {
+              const exitDate = String(data.get("exitDate"));
+              patchStore({
+                students: store.students.map((item) => item.studentId === student.studentId ? { ...item, status: "Left", exitDate } : item),
+                rooms: store.rooms.map((room) => room.roomNumber === student.roomNumber ? { ...room, occupiedBeds: Math.max(0, room.occupiedBeds - 1) } : room)
+              });
+            }}>
+              <h3 className="text-xl font-black">Student Leaving / Checkout</h3>
+              <label className="grid gap-1 text-sm font-bold">Exit Date <input className="field" type="date" name="exitDate" required /></label>
+              <button className="btn btn-light">Mark Student Left</button>
+            </form>
+          )}
         </div>
       </div>
       <div className="mt-5">
@@ -792,6 +818,8 @@ function StudentDashboard({ store, student, patchStore, payOnline }: { store: St
   const myComplaints = store.complaints.filter((item) => item.studentId === student.studentId);
   const fullyPaid = store.students.filter((item) => balance(item) === 0).length;
   const pendingStudents = store.students.filter((item) => balance(item) > 0).length;
+  const pending = balance(student);
+  const credit = advanceCredit(student);
   return (
     <section className="section">
       <p className="eyebrow">Student Dashboard</p>
@@ -808,20 +836,28 @@ function StudentDashboard({ store, student, patchStore, payOnline }: { store: St
             <span>Unique ID: <strong>{student.studentId}</strong></span>
             <span>Room {student.roomNumber} | Bed {student.bedNumber}</span>
             <span>{student.roomType} | {student.accommodationType}</span>
-            <span className={balance(student) === 0 ? "font-black text-emerald-700" : "font-black text-rose-700"}>{balance(student) === 0 ? "Payment Clear" : `${money(balance(student))} Pending`}</span>
+            <span className={pending === 0 ? "font-black text-emerald-700" : "font-black text-rose-700"}>{pending === 0 ? "Payment Clear" : `${money(pending)} Pending`}</span>
           </div>
         </div>
       </div>
+      {student.status !== "Left" && (
+        <div className={`premium-card mt-6 p-5 text-zinc-950 ${pending > 0 ? "border-amber-400 bg-amber-50" : "border-emerald-200 bg-emerald-50"}`}>
+          <h2 className="text-2xl font-black">{pending > 0 ? "This Month Due Started" : "Fees Clear"}</h2>
+          <p className="mt-2">{pending > 0 ? `Your current pending due is ${money(pending)}. Please pay this month due.` : credit > 0 ? `You have ${money(credit)} advance credit for upcoming month.` : "No pending due right now."}</p>
+          <p className="mt-1 text-sm text-zinc-600">Next billing date: {nextBillingDate(student.joiningDate)}</p>
+          {pending > 0 && <button className="btn btn-dark mt-4" onClick={() => payOnline(student)}>Pay Pending Due</button>}
+        </div>
+      )}
       {(student.alerts || []).length > 0 && <div className="premium-card mt-6 p-5 text-zinc-950"><h2 className="text-2xl font-black">Admin Alerts</h2>{student.alerts?.map((alert, index) => <p key={`${alert}-${index}`} className="mt-3 rounded-lg bg-amber-50 p-3 font-bold text-amber-950">{alert}</p>)}</div>}
       <div className="mt-8 grid gap-5 lg:grid-cols-3">
         <div className="premium-card p-5 text-zinc-950"><h2 className="text-2xl font-black">Profile</h2><p className="mt-3 text-zinc-600">{student.studentId} | Room {student.roomNumber}, Bed {student.bedNumber}</p><p>{student.roomType} | {student.accommodationType}</p></div>
-        <div className="premium-card p-5 text-zinc-950"><h2 className="text-2xl font-black">Fees</h2><p>Total: {money(student.rentAmount + student.securityAmount)}</p><p>Paid: {money(student.paidAmount)}</p><p>Remaining: {money(balance(student))}</p><button className="btn btn-dark mt-4" onClick={() => payOnline(student)}>Pay Online</button></div>
+        <div className="premium-card p-5 text-zinc-950"><h2 className="text-2xl font-black">Fees</h2><p>Total Due Till Now: {money(totalDue(student))}</p><p>Paid: {money(student.paidAmount)}</p><p>Remaining: {money(pending)}</p>{pending > 0 && <button className="btn btn-dark mt-4" onClick={() => payOnline(student)}>Pay Online</button>}</div>
         <div className="premium-card p-5 text-zinc-950"><h2 className="text-2xl font-black">Emergency</h2><p>{store.settings.contactNumber}</p><p>WhatsApp: {store.settings.whatsappNumber}</p></div>
       </div>
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
         <div className="premium-card p-5 text-zinc-950"><strong className="block text-3xl">{fullyPaid}</strong><span className="text-zinc-500">Students payment done</span></div>
         <div className="premium-card p-5 text-zinc-950"><strong className="block text-3xl">{pendingStudents}</strong><span className="text-zinc-500">Students payment pending</span></div>
-        <div className="premium-card p-5 text-zinc-950"><strong className="block text-3xl">{balance(student) === 0 ? "Done" : "Pending"}</strong><span className="text-zinc-500">Your monthly status</span></div>
+        <div className="premium-card p-5 text-zinc-950"><strong className="block text-3xl">{pending === 0 ? "Done" : "Pending"}</strong><span className="text-zinc-500">Your monthly status</span></div>
       </div>
       <div className="mt-6 grid gap-5 lg:grid-cols-2">
         <div className="premium-card p-5 text-zinc-950"><h2 className="text-2xl font-black">Latest Notices</h2>{store.notices.map((notice) => <NoticeCard key={notice.id} notice={notice} />)}</div>
@@ -849,8 +885,8 @@ function StudentDashboard({ store, student, patchStore, payOnline }: { store: St
 function RoomCard({ room }: { room: Room }) {
   const available = room.totalBeds - room.occupiedBeds;
   return (
-    <article className="overflow-hidden rounded-lg border border-white/10 bg-white/10">
-      <img src={room.photos[0]} alt={`Room ${room.roomNumber}`} className="h-60 w-full object-cover" />
+    <article className="group overflow-hidden rounded-[24px] border border-white/10 bg-white/10 shadow-2xl transition duration-300 hover:-translate-y-1 hover:bg-white/15">
+      <img src={room.photos[0]} alt={`Room ${room.roomNumber}`} className="h-60 w-full object-cover transition duration-500 group-hover:scale-105" />
       <div className="p-5">
         <h3 className="text-2xl font-black">Room {room.roomNumber}</h3>
         <p className="mt-2 text-white/70">{room.accommodationType} | {room.totalBeds} beds | {available} available</p>
@@ -862,7 +898,7 @@ function RoomCard({ room }: { room: Room }) {
 
 function MealCard({ day, settings }: { day: string; settings: SiteSettings }) {
   const meal = settings.foodTimetable[day];
-  return <div className="premium-card p-4 text-zinc-950"><Utensils className="mb-3 text-amber-700" /><strong>{day}</strong><p className="mt-2 text-sm text-zinc-600">{meal.breakfast}<br />{meal.lunch}<br />{meal.dinner}</p></div>;
+  return <div className="premium-card p-5 text-zinc-950"><Utensils className="mb-3 rounded-2xl bg-amber-50 p-2 text-amber-700" size={40} /><strong>{day}</strong><p className="mt-2 text-sm leading-6 text-zinc-600">{meal.breakfast}<br />{meal.lunch}<br />{meal.dinner}</p></div>;
 }
 
 function TodayMeal({ settings }: { settings: SiteSettings }) {
@@ -879,11 +915,42 @@ function TodayMeal({ settings }: { settings: SiteSettings }) {
 }
 
 function NoticeCard({ notice }: { notice: Notice }) {
-  return <div className="mt-3 rounded-lg border border-black/10 p-4"><strong>{notice.title}</strong><p className="text-sm text-zinc-500">{notice.date} | {notice.priority}</p><p className="mt-2">{notice.description}</p></div>;
+  return <div className="premium-card mt-3 p-5"><strong>{notice.title}</strong><p className="text-sm text-zinc-500">{notice.date} | {notice.priority}</p><p className="mt-2 leading-7">{notice.description}</p></div>;
 }
 
 function balance(student: Student) {
-  return Math.max(student.rentAmount + student.securityAmount - student.paidAmount, 0);
+  return Math.max(totalDue(student) - student.paidAmount, 0);
+}
+
+function advanceCredit(student: Student) {
+  return Math.max(student.paidAmount - totalDue(student), 0);
+}
+
+function totalDue(student: Student) {
+  const monthlyCycles = billingCycleCount(student.joiningDate, student.status === "Left" ? student.exitDate : undefined);
+  return student.securityAmount + (monthlyCycles * student.rentAmount);
+}
+
+function billingCycleCount(joiningDate: string, stopDate?: string) {
+  const start = parseDate(joiningDate);
+  const end = stopDate ? parseDate(stopDate) : new Date();
+  if (end < start) return 1;
+  let months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  if (end.getDate() < start.getDate()) months -= 1;
+  return Math.max(1, months + 1);
+}
+
+function nextBillingDate(joiningDate: string) {
+  const start = parseDate(joiningDate);
+  const today = new Date();
+  let next = new Date(today.getFullYear(), today.getMonth(), start.getDate());
+  if (next <= today) next = new Date(today.getFullYear(), today.getMonth() + 1, start.getDate());
+  return next.toISOString().slice(0, 10);
+}
+
+function parseDate(value: string) {
+  const parsed = value ? new Date(`${value}T00:00:00`) : new Date();
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 function money(value: number) {
@@ -915,7 +982,7 @@ function normalizeStore(saved: Partial<Store>): Store {
         ...(savedSettings.foodTimetable || {})
       }
     },
-    students: saved.students || seedStore.students,
+    students: (saved.students || seedStore.students).map((student) => ({ ...student, status: student.status || "Active" })),
     notices: saved.notices || seedStore.notices,
     complaints: saved.complaints || seedStore.complaints,
     rooms: saved.rooms || seedStore.rooms,
