@@ -20,6 +20,7 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { complaints as seedComplaints, notices as seedNotices, rooms as seedRooms, settings as seedSettings, students as seedStudents } from "@/lib/mock-data";
 import { auth } from "@/lib/firebase";
 import { getCentralMagneetoz, listenCentralMagneetoz, listenMagneetozEvents, saveCentralMagneetoz, trackCentralMagneetozEvent } from "@/lib/magneetoz-central";
+import { listenPgSiteStore, savePgSiteStore } from "@/lib/pg-site-sync";
 import type { Complaint, ConnectedPgSite, MagneetozReferralEvent, Notice, Payment, Room, SiteSettings, Student } from "@/lib/types";
 
 type View = "public" | "adminLogin" | "studentLogin" | "magneetozLogin" | "admin" | "student" | "magneetoz";
@@ -56,7 +57,7 @@ export default function Home() {
   const [activeStudentId, setActiveStudentId] = useState<string>("");
   const [selectedStudentId, setSelectedStudentId] = useState<string>("");
   const [studentQuery, setStudentQuery] = useState("");
-  const [feeFilter, setFeeFilter] = useState<"all" | "paid" | "pending">("all");
+  const [feeFilter, setFeeFilter] = useState<"all" | "paid" | "pending" | "left">("all");
   const [dark, setDark] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -70,6 +71,21 @@ export default function Home() {
   useEffect(() => {
     window.localStorage.setItem("premiumPgStore", JSON.stringify(store));
   }, [store]);
+
+  useEffect(() => {
+    const unsubscribe = listenPgSiteStore<Store>(pgSourceId, (remoteStore) => {
+      setStore((current) => normalizeStore({
+        ...current,
+        ...remoteStore,
+        settings: {
+          ...current.settings,
+          ...remoteStore.settings,
+          magneetoz: current.settings.magneetoz
+        }
+      }));
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     const applyCentralMagneetoz = (magneetoz: SiteSettings["magneetoz"]) => {
@@ -125,7 +141,13 @@ export default function Home() {
   }, [store]);
 
   function patchStore(patch: Partial<Store>) {
-    setStore((current) => ({ ...current, ...patch }));
+    setStore((current) => {
+      const next = normalizeStore({ ...current, ...patch });
+      void savePgSiteStore(pgSourceId, serializePgStore(next)).catch(() => {
+        window.alert("Admin update cloud sync nahi ho paaya. Firestore rules/env check karo.");
+      });
+      return next;
+    });
   }
 
   function trackMagneetozClick() {
@@ -515,16 +537,23 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, sele
   setSelectedStudentId: (id: string) => void;
   studentQuery: string;
   setStudentQuery: (query: string) => void;
-  feeFilter: "all" | "paid" | "pending";
-  setFeeFilter: (filter: "all" | "paid" | "pending") => void;
+  feeFilter: "all" | "paid" | "pending" | "left";
+  setFeeFilter: (filter: "all" | "paid" | "pending" | "left") => void;
 }) {
   const filteredStudents = store.students.filter((student) => {
     const query = studentQuery.trim().toLowerCase();
     const matchesQuery = !query || student.fullName.toLowerCase().includes(query) || student.studentId.toLowerCase().includes(query);
-    const matchesFilter = feeFilter === "all" || (feeFilter === "paid" ? balance(student) === 0 : balance(student) > 0);
+    const matchesFilter =
+      feeFilter === "all"
+        ? student.status !== "Left"
+        : feeFilter === "left"
+          ? student.status === "Left"
+          : feeFilter === "paid"
+            ? student.status !== "Left" && balance(student) === 0
+            : student.status !== "Left" && balance(student) > 0;
     return matchesQuery && matchesFilter;
   });
-  const selectedStudent = store.students.find((student) => student.studentId === selectedStudentId) || filteredStudents[0];
+  const selectedStudent = store.students.find((student) => student.studentId === selectedStudentId);
   const activeStudents = store.students.filter((student) => student.status !== "Left");
   const statItems: Array<[string, string | number, LucideIcon]> = [
     ["Active Students", activeStudents.length, BedDouble],
@@ -568,20 +597,21 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, sele
 
         <div className="premium-card p-5 text-zinc-950 lg:col-span-2">
           <h2 className="text-2xl font-black">Students, Fees & Payment History</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg bg-emerald-50 p-4"><strong className="block text-2xl">{store.students.filter((student) => balance(student) === 0).length}</strong><span className="text-sm text-emerald-800">Students fully paid</span></div>
-            <div className="rounded-lg bg-rose-50 p-4"><strong className="block text-2xl">{store.students.filter((student) => balance(student) > 0).length}</strong><span className="text-sm text-rose-800">Students pending</span></div>
-            <div className="rounded-lg bg-amber-50 p-4"><strong className="block text-2xl">{money(store.students.reduce((sum, student) => sum + balance(student), 0))}</strong><span className="text-sm text-amber-800">Total pending</span></div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl bg-emerald-50 p-4 shadow-sm"><strong className="block text-2xl">{store.students.filter((student) => student.status !== "Left" && balance(student) === 0).length}</strong><span className="text-sm text-emerald-800">Students fully paid</span></div>
+            <div className="rounded-2xl bg-rose-50 p-4 shadow-sm"><strong className="block text-2xl">{store.students.filter((student) => student.status !== "Left" && balance(student) > 0).length}</strong><span className="text-sm text-rose-800">Students pending</span></div>
+            <div className="rounded-2xl bg-zinc-100 p-4 shadow-sm"><strong className="block text-2xl">{store.students.filter((student) => student.status === "Left").length}</strong><span className="text-sm text-zinc-700">Left students</span></div>
+            <div className="rounded-2xl bg-amber-50 p-4 shadow-sm"><strong className="block text-2xl">{money(store.students.filter((student) => student.status !== "Left").reduce((sum, student) => sum + balance(student), 0))}</strong><span className="text-sm text-amber-800">Total pending</span></div>
           </div>
           <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]">
             <input className="field" value={studentQuery} onChange={(event) => setStudentQuery(event.target.value)} placeholder="Search by student name or ID" />
             <div className="flex gap-2">
-              {(["all", "paid", "pending"] as const).map((filter) => <button key={filter} className={`btn ${feeFilter === filter ? "btn-dark" : "btn-light"}`} onClick={() => setFeeFilter(filter)}>{filter}</button>)}
+              {(["all", "paid", "pending", "left"] as const).map((filter) => <button key={filter} className={`btn ${feeFilter === filter ? "btn-dark" : "btn-light"}`} onClick={() => setFeeFilter(filter)}>{filter === "left" ? "Left Students" : filter}</button>)}
             </div>
           </div>
           <div className="mt-4 grid gap-3">
             {filteredStudents.map((student) => (
-              <button className="rounded-lg border border-black/10 p-4 text-left transition hover:border-amber-600" key={student.id} onClick={() => setSelectedStudentId(student.studentId)}>
+              <button className="premium-card p-4 text-left transition hover:border-amber-600" key={student.id} onClick={() => setSelectedStudentId(student.studentId)}>
                 <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
                   <div>
                     <strong>{student.fullName}</strong>
@@ -597,10 +627,11 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, sele
                 </div>
               </button>
             ))}
+            {filteredStudents.length === 0 && <div className="rounded-2xl border border-dashed border-black/15 bg-white/60 p-6 text-center text-zinc-500">No students found in this section.</div>}
           </div>
         </div>
 
-        {selectedStudent && <StudentFeeDetail student={selectedStudent} store={store} patchStore={patchStore} addPayment={addPayment} />}
+        {selectedStudent && <StudentDetailModal student={selectedStudent} store={store} patchStore={patchStore} addPayment={addPayment} onClose={() => setSelectedStudentId("")} />}
 
         <AdminContent store={store} patchStore={patchStore} />
       </div>
@@ -663,37 +694,64 @@ function AdminContent({ store, patchStore }: { store: Store; patchStore: (patch:
   );
 }
 
-function StudentFeeDetail({ student, store, patchStore, addPayment }: { student: Student; store: Store; patchStore: (patch: Partial<Store>) => void; addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void }) {
+function StudentDetailModal({ student, store, patchStore, addPayment, onClose }: { student: Student; store: Store; patchStore: (patch: Partial<Store>) => void; addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void; onClose: () => void }) {
+  const pending = balance(student);
+  const paid = student.paidAmount;
+  const due = totalDue(student);
+  const credit = advanceCredit(student);
   return (
-    <div className="premium-card p-5 text-zinc-950 lg:col-span-3">
-      <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-        <div>
-          <p className="eyebrow">Student Detail</p>
-          <h2 className="text-3xl font-black">{student.fullName}</h2>
-          <div className="mt-4 grid gap-2 text-sm">
-            <p><strong>Identity ID:</strong> {student.studentId}</p>
-            <p><strong>Father:</strong> {student.fatherName}</p>
-            <p><strong>Phone:</strong> {student.phone}</p>
-            <p><strong>Email:</strong> {student.email}</p>
-            <p><strong>Room/Bed:</strong> {student.roomNumber} / {student.bedNumber}</p>
-            <p><strong>Type:</strong> {student.roomType} | {student.accommodationType}</p>
-            <p><strong>Status:</strong> {student.status || "Active"}</p>
-            <p><strong>Joining Date:</strong> {student.joiningDate}</p>
-            {student.exitDate && <p><strong>Exit Date:</strong> {student.exitDate}</p>}
-            <p><strong>Total Due Till Now:</strong> {money(totalDue(student))}</p>
-            <p><strong>Paid:</strong> {money(student.paidAmount)}</p>
-            <p><strong>Pending:</strong> {money(balance(student))}</p>
-            <p><strong>Next Billing Date:</strong> {student.status === "Left" ? "Stopped" : nextBillingDate(student.joiningDate)}</p>
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-zinc-950/70 p-3 backdrop-blur-xl">
+      <div className="max-h-[92vh] w-full max-w-6xl overflow-auto rounded-[28px] border border-white/50 bg-[#fbf7ef] text-zinc-950 shadow-[0_40px_120px_rgba(0,0,0,0.35)]">
+        <div className="relative overflow-hidden bg-[radial-gradient(circle_at_15%_0%,rgba(245,189,71,0.28),transparent_28%),linear-gradient(135deg,#111111,#30200f)] p-6 text-white lg:p-8">
+          <div className="absolute right-8 top-8 hidden h-28 w-28 rounded-full border border-white/15 bg-white/10 lg:block" />
+          <div className="relative flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.1em] text-amber-300">Student Command Center</p>
+            <h2 className="mt-2 text-4xl font-black tracking-tight lg:text-5xl">{student.fullName}</h2>
+            <p className="mt-2 text-white/70">{student.studentId} | Room {student.roomNumber}, Bed {student.bedNumber}</p>
+          </div>
+          <button className="btn bg-white text-zinc-950" onClick={onClose}>Close</button>
+          </div>
+        </div>
+
+        <div className="grid gap-5 p-5 lg:grid-cols-[0.85fr_1.15fr] lg:p-7">
+        <div className="grid gap-5">
+          <div className="premium-card p-5">
+            <p className="eyebrow">Identity Card</p>
+            <div className="mt-4 flex items-center gap-4">
+              <div className="grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-amber-200 to-amber-500 text-3xl font-black">{student.fullName.slice(0, 2).toUpperCase()}</div>
+              <div>
+                <h3 className="text-2xl font-black">{student.fullName}</h3>
+                <p className="text-sm text-zinc-500">{student.studentId}</p>
+                <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-black ${student.status === "Left" ? "bg-zinc-200 text-zinc-700" : "bg-emerald-100 text-emerald-700"}`}>{student.status || "Active"}</span>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3 text-sm">
+              <InfoLine label="Father" value={student.fatherName} />
+              <InfoLine label="Phone" value={student.phone} />
+              <InfoLine label="Email" value={student.email} />
+              <InfoLine label="Room / Bed" value={`${student.roomNumber} / ${student.bedNumber}`} />
+              <InfoLine label="Type" value={`${student.roomType} | ${student.accommodationType}`} />
+              <InfoLine label="Joining" value={student.joiningDate} />
+              {student.exitDate && <InfoLine label="Exit" value={student.exitDate} />}
+              <InfoLine label="Next Billing" value={student.status === "Left" ? "Stopped" : nextBillingDate(student.joiningDate)} />
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="premium-card p-4"><span className="text-sm text-zinc-500">Total Due</span><strong className="block text-2xl">{money(due)}</strong></div>
+            <div className="premium-card p-4"><span className="text-sm text-zinc-500">Deposited</span><strong className="block text-2xl text-emerald-700">{money(paid)}</strong></div>
+            <div className="premium-card p-4"><span className="text-sm text-zinc-500">Pending</span><strong className="block text-2xl text-rose-700">{money(pending)}</strong></div>
+            <div className="premium-card p-4"><span className="text-sm text-zinc-500">Advance</span><strong className="block text-2xl text-amber-700">{money(credit)}</strong></div>
           </div>
         </div>
         <div className="grid gap-4">
-          <form className="grid gap-3 rounded-lg border border-black/10 p-4" action={(data) => addPayment(student.studentId, Number(data.get("amount")), data.get("mode") as Payment["mode"])}>
+          <form className="premium-card grid gap-3 p-5" action={(data) => addPayment(student.studentId, Number(data.get("amount")), data.get("mode") as Payment["mode"])}>
             <h3 className="text-xl font-black">Offline Cash / UPI Collection</h3>
             <input className="field" name="amount" type="number" max={balance(student)} placeholder={`Pending ${money(balance(student))}`} required />
             <select className="field" name="mode"><option>Cash</option><option>UPI</option><option>Bank</option><option>Razorpay</option></select>
             <button className="btn btn-dark">Update Payment</button>
           </form>
-          <form className="grid gap-3 rounded-lg border border-black/10 p-4" action={(data) => {
+          <form className="premium-card grid gap-3 p-5" action={(data) => {
             const alert = String(data.get("alert"));
             patchStore({ students: store.students.map((item) => item.studentId === student.studentId ? { ...item, alerts: [alert, ...(item.alerts || [])] } : item) });
           }}>
@@ -702,7 +760,7 @@ function StudentFeeDetail({ student, store, patchStore, addPayment }: { student:
             <button className="btn btn-dark">Send Alert</button>
           </form>
           {student.status !== "Left" && (
-            <form className="grid gap-3 rounded-lg border border-black/10 p-4" action={(data) => {
+            <form className="premium-card grid gap-3 p-5" action={(data) => {
               const exitDate = String(data.get("exitDate"));
               patchStore({
                 students: store.students.map((item) => item.studentId === student.studentId ? { ...item, status: "Left", exitDate } : item),
@@ -716,14 +774,21 @@ function StudentFeeDetail({ student, store, patchStore, addPayment }: { student:
           )}
         </div>
       </div>
-      <div className="mt-5">
-        <h3 className="text-xl font-black">Payment Timeline</h3>
-        <div className="mt-3 grid gap-2">
-          {student.paymentHistory.length ? student.paymentHistory.map((payment) => <div key={payment.id} className="rounded-lg border border-black/10 p-3"><strong>{money(payment.amount)}</strong><p className="text-sm text-zinc-500">{payment.date} | {payment.mode} | {payment.receiptId}</p></div>) : <p className="text-zinc-500">No payment recorded yet.</p>}
+      <div className="px-5 pb-6 lg:px-7">
+        <div className="premium-card p-5">
+          <h3 className="text-xl font-black">Payment Timeline</h3>
+          <div className="mt-3 grid gap-2">
+            {student.paymentHistory.length ? student.paymentHistory.map((payment) => <div key={payment.id} className="rounded-2xl border border-black/10 bg-white/70 p-3"><strong>{money(payment.amount)}</strong><p className="text-sm text-zinc-500">{payment.date} | {payment.mode} | {payment.receiptId}</p></div>) : <p className="text-zinc-500">No payment recorded yet.</p>}
+          </div>
         </div>
+      </div>
       </div>
     </div>
   );
+}
+
+function InfoLine({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-center justify-between gap-4 rounded-2xl bg-white/70 px-3 py-2"><span className="text-zinc-500">{label}</span><strong className="text-right">{value}</strong></div>;
 }
 
 function MagneetozManager({ store, patchStore }: { store: Store; patchStore: (patch: Partial<Store>) => void }) {
@@ -1013,5 +1078,16 @@ function normalizeStore(saved: Partial<Store>): Store {
     rooms: saved.rooms || seedStore.rooms,
     magneetozEvents: saved.magneetozEvents || seedStore.magneetozEvents,
     connectedPgSites: saved.connectedPgSites || seedStore.connectedPgSites
+  };
+}
+
+function serializePgStore(store: Store): Store {
+  return {
+    ...store,
+    magneetozEvents: [],
+    settings: {
+      ...store.settings,
+      magneetoz: seedStore.settings.magneetoz
+    }
   };
 }

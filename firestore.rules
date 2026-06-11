@@ -18,6 +18,12 @@ service cloud.firestore {
       return signedIn() && request.auth.token.email == 'magneetoz73@gmail.com';
     }
 
+    function isKnownPgAdmin() {
+      return signedIn() &&
+        (request.auth.token.email == 'magneeto73@gmail.com' ||
+         request.auth.token.email == 'magneetoz73@gmail.com');
+    }
+
     function isStudentOwner(studentId) {
       return signedIn() && request.auth.uid == studentId;
     }
@@ -69,6 +75,11 @@ service cloud.firestore {
       allow create: if true;
       allow read: if isAdmin() || isMagneetozOwner();
       allow update, delete: if isAdmin() || isMagneetozOwner();
+    }
+
+    match /pgSites/{siteId} {
+      allow read: if true;
+      allow write: if isAdmin() || isKnownPgAdmin();
     }
 
     match /users/{userId} {
