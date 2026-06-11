@@ -499,11 +499,11 @@ function MagneetozBanner({ settings, pgSourceId, onTrack }: { settings: SiteSett
 function PublicSite({ store, onTrackMagneetoz }: { store: Store; onTrackMagneetoz: () => void }) {
   return (
     <>
-      <section className="relative mx-3 mt-4 min-h-[560px] overflow-hidden rounded-[28px] lg:mx-8 lg:min-h-[78vh]">
+      <section className="relative mx-3 mt-4 h-[50svh] min-h-[360px] overflow-hidden rounded-[28px] lg:mx-8 lg:h-auto lg:min-h-[78vh]">
         <img src={store.settings.heroBanner} alt="Premium PG room" className="absolute inset-0 h-full w-full object-cover" />
         <div className="absolute inset-0 bg-[linear-gradient(105deg,rgba(0,0,0,0.86),rgba(0,0,0,0.50)_52%,rgba(0,0,0,0.08))]" />
         <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black/45 to-transparent" />
-        <div className="relative max-w-4xl px-6 py-20 text-white lg:px-20 lg:py-36">
+        <div className="relative flex h-full max-w-4xl flex-col justify-center px-6 py-10 text-white lg:block lg:h-auto lg:px-20 lg:py-36">
           <p className="inline-flex rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-black uppercase tracking-[0.08em] text-amber-200 backdrop-blur-xl">Luxury Hotel Style PG</p>
           <h1 className="mt-5 text-5xl font-black leading-none tracking-tight lg:text-8xl">{store.settings.pgName}</h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-white/86 lg:text-xl lg:leading-9">{store.settings.about}</p>
