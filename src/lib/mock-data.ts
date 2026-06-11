@@ -28,6 +28,9 @@ export const settings: SiteSettings = {
     couponText: "USE COUPON: HOSTELLOVE",
     referralCodePrefix: "APBOYS",
     referralEnabled: true,
+    pgCoupons: {
+      APBOYS: "APBOYS50"
+    },
     buttonText: "Claim Offer",
     bannerUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1800&q=90",
     foodImages: [

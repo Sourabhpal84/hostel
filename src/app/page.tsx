@@ -453,12 +453,22 @@ function Login({ title, hint, onSubmit, onClose }: { title: string; hint: string
 }
 
 function MagneetozBanner({ settings, pgSourceId, onTrack }: { settings: SiteSettings; pgSourceId?: string; onTrack?: () => void }) {
-  const referralCode = settings.magneetoz.referralEnabled ? `${settings.magneetoz.referralCodePrefix}-${pgSourceId || "PG"}` : pgSourceId || "PG";
+  const [slide, setSlide] = useState(0);
+  const source = pgSourceId || "PG";
+  const carouselImages = [settings.magneetoz.bannerUrl, ...settings.magneetoz.foodImages].filter(Boolean).slice(0, 4);
+  const activeImage = carouselImages[slide % Math.max(carouselImages.length, 1)] || settings.magneetoz.bannerUrl;
+  useEffect(() => {
+    if (carouselImages.length <= 1) return;
+    const interval = window.setInterval(() => setSlide((current) => (current + 1) % carouselImages.length), 3500);
+    return () => window.clearInterval(interval);
+  }, [carouselImages.length]);
+  const manualCoupon = settings.magneetoz.pgCoupons?.[source];
+  const referralCode = manualCoupon || (settings.magneetoz.referralEnabled ? `${settings.magneetoz.referralCodePrefix}-${source}` : source);
   const targetLink = `${settings.magneetoz.websiteLink}?source=${encodeURIComponent(pgSourceId || "PG")}&ref=${encodeURIComponent(referralCode)}`;
   return (
     <section className="px-4 py-4 lg:px-14 lg:py-7">
       <a href={targetLink} onClick={onTrack} target="_blank" rel="noreferrer" className="group relative block h-[230px] overflow-hidden rounded-lg bg-zinc-950 text-white shadow-2xl sm:h-[320px] lg:h-auto lg:min-h-[68vh]">
-        <img src={settings.magneetoz.bannerUrl} alt="Magneetoz promotional offer" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+        <img src={activeImage} alt="Magneetoz promotional offer" className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-105" />
         <div className="absolute inset-0 bg-gradient-to-r from-black/88 via-black/58 to-black/10" />
         <div className="relative flex h-full max-w-4xl flex-col justify-center p-4 lg:min-h-[68vh] lg:p-16">
           <p className="text-[11px] font-black uppercase text-amber-500 lg:text-sm">Exclusive Restaurant Promotion</p>
@@ -467,11 +477,12 @@ function MagneetozBanner({ settings, pgSourceId, onTrack }: { settings: SiteSett
           <p className="mt-4 hidden max-w-2xl text-base leading-7 text-white/80 sm:block lg:text-lg lg:leading-8">{settings.magneetoz.description}</p>
           <p className="mt-3 hidden max-w-2xl text-base font-bold text-white lg:block">{settings.magneetoz.discountDetails}</p>
           <div className="mt-4 flex flex-wrap items-center gap-2 lg:mt-8 lg:gap-3">
-            <span className="rounded-lg border border-amber-200/50 bg-amber-200 px-3 py-2 text-sm font-black text-zinc-950 shadow-xl lg:px-5 lg:py-4 lg:text-lg">{settings.magneetoz.couponText}</span>
+            <span className="rounded-lg border border-amber-200/50 bg-amber-200 px-3 py-2 text-sm font-black text-zinc-950 shadow-xl lg:px-5 lg:py-4 lg:text-lg">{manualCoupon ? `USE COUPON: ${manualCoupon}` : settings.magneetoz.couponText}</span>
             <span className="hidden rounded-lg border border-white/30 bg-white/10 px-4 py-3 text-base font-black text-white sm:inline-flex">REF: {referralCode}</span>
             <span className="rounded-lg bg-white px-3 py-2 text-sm font-black text-zinc-950 lg:px-5 lg:py-3 lg:text-base">{settings.magneetoz.buttonText}</span>
           </div>
           <p className="mt-5 hidden text-sm font-bold uppercase text-white/70 lg:block">Click anywhere on this offer to visit magneetoz.com</p>
+          {carouselImages.length > 1 && <div className="absolute bottom-4 left-4 flex gap-2 lg:bottom-8 lg:left-16">{carouselImages.map((_, index) => <span key={index} className={`h-2 rounded-full transition-all ${index === slide ? "w-8 bg-amber-300" : "w-2 bg-white/45"}`} />)}</div>}
         </div>
       </a>
     </section>
@@ -827,6 +838,7 @@ function MagneetozManager({ store, patchStore }: { store: Store; patchStore: (pa
       couponText: String(data.get("couponText") || store.settings.magneetoz.couponText),
       referralCodePrefix: String(data.get("referralCodePrefix") || store.settings.magneetoz.referralCodePrefix),
       referralEnabled: data.get("referralEnabled") === "on",
+      pgCoupons: parsePgCoupons(String(data.get("pgCoupons") || formatPgCoupons(store.settings.magneetoz.pgCoupons))),
       buttonText: String(data.get("buttonText") || store.settings.magneetoz.buttonText),
       bannerUrl: String(data.get("bannerUrl") || store.settings.magneetoz.bannerUrl),
       foodImages: splitLines(String(data.get("foodImages") || store.settings.magneetoz.foodImages.join("\n"))),
@@ -861,12 +873,13 @@ function MagneetozManager({ store, patchStore }: { store: Store; patchStore: (pa
           <input name="discountDetails" className="field" defaultValue={store.settings.magneetoz.discountDetails} placeholder="Discount details" />
           <input name="couponText" className="field" defaultValue={store.settings.magneetoz.couponText} placeholder="Coupon text" />
           <input name="referralCodePrefix" className="field" defaultValue={store.settings.magneetoz.referralCodePrefix} placeholder="Referral code prefix" />
+          <textarea name="pgCoupons" className="field" defaultValue={formatPgCoupons(store.settings.magneetoz.pgCoupons)} placeholder="PG coupon mapping, one per line: APBOYS=APBOYS50" />
           <input name="buttonText" className="field" defaultValue={store.settings.magneetoz.buttonText} placeholder="Button text" />
           <input name="bannerUrl" className="field" defaultValue={store.settings.magneetoz.bannerUrl} placeholder="Large offer image URL" />
           <input name="websiteLink" className="field" defaultValue={store.settings.magneetoz.websiteLink} placeholder="Website link" />
           <input name="whatsappLink" className="field" defaultValue={store.settings.magneetoz.whatsappLink} placeholder="WhatsApp link" />
           <input name="instagramLink" className="field" defaultValue={store.settings.magneetoz.instagramLink} placeholder="Instagram link" />
-          <textarea name="foodImages" className="field" defaultValue={store.settings.magneetoz.foodImages.join("\n")} placeholder="Pizza/food image URLs, one per line" />
+          <textarea name="foodImages" className="field" defaultValue={store.settings.magneetoz.foodImages.join("\n")} placeholder="Up to 3 extra slide image URLs, one per line. Banner + these images will auto-slide." />
           <textarea name="qrCodes" className="field" defaultValue={store.settings.magneetoz.qrCodes.join("\n")} placeholder="QR code image URLs, one per line" />
           <textarea name="videos" className="field" defaultValue={store.settings.magneetoz.videos.join("\n")} placeholder="Promotional video URLs, one per line" />
           <button className="btn btn-dark">Save Offer</button>
@@ -1067,6 +1080,18 @@ function labelize(value: string) {
 
 function splitLines(value: string) {
   return value.split("\n").map((item) => item.trim()).filter(Boolean);
+}
+
+function formatPgCoupons(coupons: Record<string, string> = {}) {
+  return Object.entries(coupons).map(([source, coupon]) => `${source}=${coupon}`).join("\n");
+}
+
+function parsePgCoupons(value: string) {
+  return value.split("\n").reduce<Record<string, string>>((result, line) => {
+    const [source, coupon] = line.split("=").map((item) => item?.trim());
+    if (source && coupon) result[source] = coupon;
+    return result;
+  }, {});
 }
 
 function normalizeStore(saved: Partial<Store>): Store {

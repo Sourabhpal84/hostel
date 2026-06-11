@@ -84,6 +84,7 @@ export type SiteSettings = {
     couponText: string;
     referralCodePrefix: string;
     referralEnabled: boolean;
+    pgCoupons: Record<string, string>;
     buttonText: string;
     bannerUrl: string;
     foodImages: string[];
