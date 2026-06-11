@@ -14,6 +14,10 @@ service cloud.firestore {
       return signedIn() && userRole() == 'admin';
     }
 
+    function isMagneetozOwner() {
+      return signedIn() && request.auth.token.email == 'magneetoz73@gmail.com';
+    }
+
     function isStudentOwner(studentId) {
       return signedIn() && request.auth.uid == studentId;
     }
@@ -53,18 +57,18 @@ service cloud.firestore {
 
     match /centralMagneetoz/{docId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isMagneetozOwner();
     }
 
     match /centralMagneetozSites/{siteId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isMagneetozOwner();
     }
 
     match /centralMagneetozEvents/{eventId} {
       allow create: if true;
-      allow read: if isAdmin();
-      allow update, delete: if isAdmin();
+      allow read: if isAdmin() || isMagneetozOwner();
+      allow update, delete: if isAdmin() || isMagneetozOwner();
     }
 
     match /users/{userId} {

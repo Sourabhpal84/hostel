@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, onSnapshot, orderBy, query, setDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import type { ConnectedPgSite, MagneetozReferralEvent, SiteSettings } from "./types";
 
@@ -14,6 +14,13 @@ export function listenCentralMagneetoz(callback: (magneetoz: SiteSettings["magne
     const data = snapshot.data();
     if (data?.magneetoz) callback(data.magneetoz as SiteSettings["magneetoz"]);
   }, () => undefined);
+}
+
+export async function getCentralMagneetoz() {
+  if (!db) return null;
+  const snapshot = await getDoc(doc(db, magneetozCollections.settingsDoc));
+  const data = snapshot.data();
+  return data?.magneetoz ? data.magneetoz as SiteSettings["magneetoz"] : null;
 }
 
 export async function saveCentralMagneetoz(magneetoz: SiteSettings["magneetoz"]) {

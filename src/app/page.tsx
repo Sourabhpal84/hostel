@@ -19,7 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { complaints as seedComplaints, notices as seedNotices, rooms as seedRooms, settings as seedSettings, students as seedStudents } from "@/lib/mock-data";
 import { auth } from "@/lib/firebase";
-import { listenCentralMagneetoz, listenMagneetozEvents, saveCentralMagneetoz, trackCentralMagneetozEvent } from "@/lib/magneetoz-central";
+import { getCentralMagneetoz, listenCentralMagneetoz, listenMagneetozEvents, saveCentralMagneetoz, trackCentralMagneetozEvent } from "@/lib/magneetoz-central";
 import type { Complaint, ConnectedPgSite, MagneetozReferralEvent, Notice, Payment, Room, SiteSettings, Student } from "@/lib/types";
 
 type View = "public" | "adminLogin" | "studentLogin" | "magneetozLogin" | "admin" | "student" | "magneetoz";
@@ -72,10 +72,27 @@ export default function Home() {
   }, [store]);
 
   useEffect(() => {
-    const unsubscribeContent = listenCentralMagneetoz((magneetoz) => {
+    const applyCentralMagneetoz = (magneetoz: SiteSettings["magneetoz"]) => {
       setStore((current) => ({ ...current, settings: { ...current.settings, magneetoz: { ...current.settings.magneetoz, ...magneetoz } } }));
+    };
+    const refreshCentralMagneetoz = async () => {
+      const magneetoz = await getCentralMagneetoz();
+      if (magneetoz) applyCentralMagneetoz(magneetoz);
+    };
+    const unsubscribeContent = listenCentralMagneetoz((magneetoz) => {
+      applyCentralMagneetoz(magneetoz);
     });
+    void refreshCentralMagneetoz();
+    const interval = window.setInterval(refreshCentralMagneetoz, 30000);
+    const onVisibility = () => {
+      if (!document.hidden) void refreshCentralMagneetoz();
+    };
+    window.addEventListener("focus", refreshCentralMagneetoz);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshCentralMagneetoz);
+      document.removeEventListener("visibilitychange", onVisibility);
       unsubscribeContent();
     };
   }, []);
@@ -742,7 +759,9 @@ function MagneetozManager({ store, patchStore }: { store: Store; patchStore: (pa
       videos: splitLines(String(data.get("videos") || store.settings.magneetoz.videos.join("\n")))
     };
     patchStore({ settings: { ...store.settings, magneetoz } });
-    void saveCentralMagneetoz(magneetoz);
+    void saveCentralMagneetoz(magneetoz).catch(() => {
+      window.alert("Magneetoz central save failed. Firestore rules/env check karo. Local screen update ho gaya, lekin dusre devices par sync nahi hoga.");
+    });
   }
   return (
     <section className="section">
