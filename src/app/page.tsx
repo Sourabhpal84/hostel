@@ -150,6 +150,14 @@ export default function Home() {
     });
   }
 
+  function uploadLogo(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      patchStore({ settings: { ...store.settings, logoUrl: String(reader.result) } });
+    };
+    reader.readAsDataURL(file);
+  }
+
   function trackMagneetozClick() {
     const referralCode = store.settings.magneetoz.referralEnabled ? `${store.settings.magneetoz.referralCodePrefix}-${pgSourceId}` : pgSourceId;
     const event: MagneetozReferralEvent = {
@@ -344,8 +352,7 @@ export default function Home() {
     <main className={shellClass}>
       <Header view={view} setView={setView} dark={dark} setDark={setDark} settings={store.settings} />
       {message && <div className="mx-5 mt-4 rounded-lg bg-amber-100 px-4 py-3 font-bold text-amber-950 lg:mx-14">{message}</div>}
-      {store.settings.magneetoz.enabled && <MagneetozBanner settings={store.settings} pgSourceId={pgSourceId} onTrack={trackMagneetozClick} />}
-      {view === "public" && <PublicSite store={store} />}
+      {view === "public" && <PublicSite store={store} onTrackMagneetoz={trackMagneetozClick} />}
       {view === "adminLogin" && <Login title="Admin Login" hint="Use your admin email and password." onSubmit={submitAdminLogin} onClose={() => setView("public")} />}
       {view === "studentLogin" && <Login title="Student Login" hint="Use the email and password created by admin." onSubmit={submitStudentLogin} onClose={() => setView("public")} />}
       {view === "magneetozLogin" && <Login title="Magneetoz Login" hint="Use Magneetoz owner login." onSubmit={submitMagneetozLogin} onClose={() => setView("public")} />}
@@ -356,6 +363,7 @@ export default function Home() {
           patchStore={patchStore}
           addStudent={addStudent}
           addPayment={addPayment}
+          uploadLogo={uploadLogo}
           selectedStudentId={selectedStudentId}
           setSelectedStudentId={setSelectedStudentId}
           studentQuery={studentQuery}
@@ -478,7 +486,6 @@ function MagneetozBanner({ settings, pgSourceId, onTrack }: { settings: SiteSett
           <p className="mt-3 hidden max-w-2xl text-base font-bold text-white lg:block">{settings.magneetoz.discountDetails}</p>
           <div className="mt-4 flex flex-wrap items-center gap-2 lg:mt-8 lg:gap-3">
             <span className="rounded-lg border border-amber-200/50 bg-amber-200 px-3 py-2 text-sm font-black text-zinc-950 shadow-xl lg:px-5 lg:py-4 lg:text-lg">{manualCoupon ? `USE COUPON: ${manualCoupon}` : settings.magneetoz.couponText}</span>
-            <span className="hidden rounded-lg border border-white/30 bg-white/10 px-4 py-3 text-base font-black text-white sm:inline-flex">REF: {referralCode}</span>
             <span className="rounded-lg bg-white px-3 py-2 text-sm font-black text-zinc-950 lg:px-5 lg:py-3 lg:text-base">{settings.magneetoz.buttonText}</span>
           </div>
           <p className="mt-5 hidden text-sm font-bold uppercase text-white/70 lg:block">Click anywhere on this offer to visit magneetoz.com</p>
@@ -489,7 +496,7 @@ function MagneetozBanner({ settings, pgSourceId, onTrack }: { settings: SiteSett
   );
 }
 
-function PublicSite({ store }: { store: Store }) {
+function PublicSite({ store, onTrackMagneetoz }: { store: Store; onTrackMagneetoz: () => void }) {
   return (
     <>
       <section className="relative mx-3 mt-4 min-h-[560px] overflow-hidden rounded-[28px] lg:mx-8 lg:min-h-[78vh]">
@@ -506,6 +513,7 @@ function PublicSite({ store }: { store: Store }) {
           </div>
         </div>
       </section>
+      {store.settings.magneetoz.enabled && <MagneetozBanner settings={store.settings} pgSourceId={pgSourceId} onTrack={onTrackMagneetoz} />}
       <section id="facilities" className="section">
         <p className="eyebrow">Facilities</p>
         <h2 className="mt-2 max-w-3xl text-4xl font-black tracking-tight lg:text-5xl">Comfort, safety, and premium student living in one place.</h2>
@@ -540,19 +548,30 @@ function PublicSite({ store }: { store: Store }) {
             <p className="mt-4 text-zinc-600">{store.settings.address}</p>
             <p className="mt-2 font-bold">{store.settings.contactNumber}</p>
           </div>
-          <iframe src={store.settings.googleMapsLink} className="h-72 w-full rounded-lg border-0" title="PG location map" />
+          {isEmbeddableMap(store.settings.googleMapsLink) ? (
+            <iframe src={store.settings.googleMapsLink} className="h-72 w-full rounded-[20px] border-0" title="PG location map" />
+          ) : (
+            <div className="grid h-72 place-items-center rounded-[20px] border border-dashed border-black/15 bg-white/70 p-6 text-center">
+              <div>
+                <p className="font-black">Google Maps embed link required</p>
+                <p className="mt-2 text-sm text-zinc-500">Admin dashboard me Google Maps ka Embed URL add karo.</p>
+                {store.settings.googleMapsLink && <a className="btn btn-dark mt-4" href={store.settings.googleMapsLink} target="_blank" rel="noreferrer">Open Location</a>}
+              </div>
+            </div>
+          )}
         </div>
       </section>
     </>
   );
 }
 
-function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, selectedStudentId, setSelectedStudentId, studentQuery, setStudentQuery, feeFilter, setFeeFilter }: {
+function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, uploadLogo, selectedStudentId, setSelectedStudentId, studentQuery, setStudentQuery, feeFilter, setFeeFilter }: {
   store: Store;
   stats: { occupied: number; vacant: number; collection: number; pending: number; complaintsPending: number; complaintsResolved: number };
   patchStore: (patch: Partial<Store>) => void;
   addStudent: (formData: FormData) => void | Promise<void>;
   addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void;
+  uploadLogo: (file: File) => void;
   selectedStudentId: string;
   setSelectedStudentId: (id: string) => void;
   studentQuery: string;
@@ -656,23 +675,32 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, sele
 
         {selectedStudent && <StudentDetailModal student={selectedStudent} store={store} patchStore={patchStore} addPayment={addPayment} onClose={() => setSelectedStudentId("")} />}
 
-        <AdminContent store={store} patchStore={patchStore} />
+        <AdminContent store={store} patchStore={patchStore} uploadLogo={uploadLogo} />
       </div>
     </section>
   );
 }
 
-function AdminContent({ store, patchStore }: { store: Store; patchStore: (patch: Partial<Store>) => void }) {
+function AdminContent({ store, patchStore, uploadLogo }: { store: Store; patchStore: (patch: Partial<Store>) => void; uploadLogo: (file: File) => void }) {
   return (
     <>
-      <form className="premium-card grid gap-3 p-5 text-zinc-950" action={(data) => patchStore({ settings: { ...store.settings, pgName: String(data.get("pgName") || store.settings.pgName), logoUrl: String(data.get("logoUrl") || store.settings.logoUrl), about: String(data.get("about") || store.settings.about), heroBanner: String(data.get("heroBanner") || store.settings.heroBanner), contactNumber: String(data.get("contactNumber") || store.settings.contactNumber), address: String(data.get("address") || store.settings.address) } })}>
+      <form className="premium-card grid gap-3 p-5 text-zinc-950" action={(data) => patchStore({ settings: { ...store.settings, pgName: String(data.get("pgName") || store.settings.pgName), logoUrl: String(data.get("logoUrl") || store.settings.logoUrl), about: String(data.get("about") || store.settings.about), heroBanner: String(data.get("heroBanner") || store.settings.heroBanner), contactNumber: String(data.get("contactNumber") || store.settings.contactNumber), address: String(data.get("address") || store.settings.address), googleMapsLink: String(data.get("googleMapsLink") || store.settings.googleMapsLink) } })}>
         <h2 className="text-2xl font-black">Website Settings</h2>
         <input name="pgName" className="field" placeholder="PG Name" />
         <input name="logoUrl" className="field" placeholder="Logo image URL" />
+        <label className="grid gap-2 text-sm font-bold">
+          Upload Logo Manually
+          <input className="field" type="file" accept="image/*" onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) uploadLogo(file);
+          }} />
+        </label>
+        {store.settings.logoUrl && <div className="flex items-center gap-3 rounded-2xl bg-white/70 p-3"><img src={store.settings.logoUrl} alt="Current logo" className="h-14 w-14 rounded-2xl object-cover" /><span className="text-sm font-bold text-zinc-600">Current header logo</span></div>}
         <textarea name="about" className="field" placeholder="About content" />
         <input name="heroBanner" className="field" placeholder="Hero banner URL" />
         <input name="contactNumber" className="field" placeholder="Contact number" />
         <input name="address" className="field" placeholder="Address" />
+        <input name="googleMapsLink" className="field" placeholder="Google Maps embed URL" />
         <button className="btn btn-dark">Update Website</button>
       </form>
 
@@ -836,17 +864,17 @@ function MagneetozManager({ store, patchStore }: { store: Store; patchStore: (pa
       description: String(data.get("description") || store.settings.magneetoz.description),
       discountDetails: String(data.get("discountDetails") || store.settings.magneetoz.discountDetails),
       couponText: String(data.get("couponText") || store.settings.magneetoz.couponText),
-      referralCodePrefix: String(data.get("referralCodePrefix") || store.settings.magneetoz.referralCodePrefix),
-      referralEnabled: data.get("referralEnabled") === "on",
+      referralCodePrefix: store.settings.magneetoz.referralCodePrefix,
+      referralEnabled: true,
       pgCoupons: parsePgCoupons(String(data.get("pgCoupons") || formatPgCoupons(store.settings.magneetoz.pgCoupons))),
       buttonText: String(data.get("buttonText") || store.settings.magneetoz.buttonText),
-      bannerUrl: String(data.get("bannerUrl") || store.settings.magneetoz.bannerUrl),
+      bannerUrl: store.settings.magneetoz.bannerUrl,
       foodImages: splitLines(String(data.get("foodImages") || store.settings.magneetoz.foodImages.join("\n"))),
-      websiteLink: String(data.get("websiteLink") || store.settings.magneetoz.websiteLink),
-      whatsappLink: String(data.get("whatsappLink") || store.settings.magneetoz.whatsappLink),
-      instagramLink: String(data.get("instagramLink") || store.settings.magneetoz.instagramLink),
-      qrCodes: splitLines(String(data.get("qrCodes") || store.settings.magneetoz.qrCodes.join("\n"))),
-      videos: splitLines(String(data.get("videos") || store.settings.magneetoz.videos.join("\n")))
+      websiteLink: store.settings.magneetoz.websiteLink,
+      whatsappLink: store.settings.magneetoz.whatsappLink,
+      instagramLink: store.settings.magneetoz.instagramLink,
+      qrCodes: store.settings.magneetoz.qrCodes,
+      videos: store.settings.magneetoz.videos
     };
     patchStore({ settings: { ...store.settings, magneetoz } });
     void saveCentralMagneetoz(magneetoz).catch(() => {
@@ -866,22 +894,14 @@ function MagneetozManager({ store, patchStore }: { store: Store; patchStore: (pa
         <form className="premium-card grid gap-3 p-5 text-zinc-950" action={savePromotion}>
           <h2 className="text-2xl font-black">Central Content Manager</h2>
           <label className="flex gap-2 font-bold"><input name="enabled" type="checkbox" defaultChecked={store.settings.magneetoz.enabled} /> Show offer on website</label>
-          <label className="flex gap-2 font-bold"><input name="referralEnabled" type="checkbox" defaultChecked={store.settings.magneetoz.referralEnabled} /> Enable referral code</label>
           <input name="restaurantName" className="field" defaultValue={store.settings.magneetoz.restaurantName} placeholder="Restaurant name" />
           <input name="title" className="field" defaultValue={store.settings.magneetoz.title} placeholder="Offer headline" />
           <textarea name="description" className="field" defaultValue={store.settings.magneetoz.description} placeholder="Offer description" />
           <input name="discountDetails" className="field" defaultValue={store.settings.magneetoz.discountDetails} placeholder="Discount details" />
           <input name="couponText" className="field" defaultValue={store.settings.magneetoz.couponText} placeholder="Coupon text" />
-          <input name="referralCodePrefix" className="field" defaultValue={store.settings.magneetoz.referralCodePrefix} placeholder="Referral code prefix" />
-          <textarea name="pgCoupons" className="field" defaultValue={formatPgCoupons(store.settings.magneetoz.pgCoupons)} placeholder="PG coupon mapping, one per line: APBOYS=APBOYS50" />
+          <textarea name="pgCoupons" className="field" defaultValue={formatPgCoupons(store.settings.magneetoz.pgCoupons)} placeholder={"Har PG coupon ko alag line me likho:\nAPBOYS=APBOYS50\nSHARMA_PG=SHARMA100"} />
           <input name="buttonText" className="field" defaultValue={store.settings.magneetoz.buttonText} placeholder="Button text" />
-          <input name="bannerUrl" className="field" defaultValue={store.settings.magneetoz.bannerUrl} placeholder="Large offer image URL" />
-          <input name="websiteLink" className="field" defaultValue={store.settings.magneetoz.websiteLink} placeholder="Website link" />
-          <input name="whatsappLink" className="field" defaultValue={store.settings.magneetoz.whatsappLink} placeholder="WhatsApp link" />
-          <input name="instagramLink" className="field" defaultValue={store.settings.magneetoz.instagramLink} placeholder="Instagram link" />
-          <textarea name="foodImages" className="field" defaultValue={store.settings.magneetoz.foodImages.join("\n")} placeholder="Up to 3 extra slide image URLs, one per line. Banner + these images will auto-slide." />
-          <textarea name="qrCodes" className="field" defaultValue={store.settings.magneetoz.qrCodes.join("\n")} placeholder="QR code image URLs, one per line" />
-          <textarea name="videos" className="field" defaultValue={store.settings.magneetoz.videos.join("\n")} placeholder="Promotional video URLs, one per line" />
+          <textarea name="foodImages" className="field" defaultValue={store.settings.magneetoz.foodImages.join("\n")} placeholder={"Extra slide image links yahan paste karo. Har image URL new line me:\nhttps://image1...\nhttps://image2..."} />
           <button className="btn btn-dark">Save Offer</button>
         </form>
         <div>
@@ -1252,4 +1272,8 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function isEmbeddableMap(value: string) {
+  return value.includes("google.com/maps/embed") || value.includes("www.google.com/maps/embed");
 }
