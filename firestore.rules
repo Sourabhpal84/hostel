@@ -11,7 +11,10 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return signedIn() && userRole() == 'admin';
+      return signedIn() &&
+        (userRole() == 'admin' ||
+         request.auth.token.email == 'magneeto73@gmail.com' ||
+         request.auth.token.email == 'magneetoz73@gmail.com');
     }
 
     function isMagneetozOwner() {
@@ -49,14 +52,15 @@ service cloud.firestore {
     }
 
     match /complaints/{complaintId} {
-      allow read: if isAdmin() || resource.data.uid == request.auth.uid;
-      allow create: if signedIn();
+      allow read: if isAdmin() || resource.data.uid == request.auth.uid || resource.data.studentId == request.auth.uid;
+      allow create: if signedIn() &&
+        (!('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid);
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
     match /payments/{paymentId} {
-      allow read: if isAdmin() || resource.data.uid == request.auth.uid;
+      allow read: if isAdmin() || resource.data.uid == request.auth.uid || resource.data.studentId == request.auth.uid;
       allow create, update: if isAdmin();
       allow delete: if isAdmin();
     }
