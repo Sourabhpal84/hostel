@@ -230,7 +230,9 @@ export default function Home() {
     } catch {
       setMessage("Student local add ho gaya, lekin Firebase Auth create nahi hua. Firebase Admin env setup karo.");
     }
-    patchStore({ students: [student, ...store.students], rooms });
+    const initialRevenueEntries = student.paidAmount > 0 ? createInitialStudentRevenue(student) : [];
+    const initialAuditLogs = initialRevenueEntries.map((entry) => createAudit("revenue", entry.id, "added", `Initial admission revenue created for ${student.fullName}`));
+    patchStore({ students: [student, ...store.students], rooms, revenues: [...initialRevenueEntries, ...store.revenues], auditLogs: [...initialAuditLogs, ...store.auditLogs] });
     if (loginCreated) {
       setMessage(`Admission added. Student can login with ${student.email} / ${student.password}`);
     }
@@ -308,6 +310,17 @@ export default function Home() {
       return;
     }
     patchStore({ expenses: store.expenses.map((entry) => entry.id === id ? { ...entry, deleted: true, updatedAt: new Date().toISOString() } : entry), auditLogs: [createAudit("expense", id, "deleted", "Expense soft deleted"), ...store.auditLogs] });
+  }
+
+  function deleteStudent(studentId: string) {
+    const student = store.students.find((item) => item.studentId === studentId);
+    if (!student) return;
+    patchStore({
+      students: store.students.filter((item) => item.studentId !== studentId),
+      rooms: store.rooms.map((room) => room.roomNumber === student.roomNumber && student.status !== "Left" ? { ...room, occupiedBeds: Math.max(0, room.occupiedBeds - 1) } : room)
+    });
+    setSelectedStudentId("");
+    setMessage(`${student.fullName} deleted from student records.`);
   }
 
   async function payOnline(student: Student) {
@@ -427,6 +440,7 @@ export default function Home() {
           patchStore={patchStore}
           addStudent={addStudent}
           addPayment={addPayment}
+          deleteStudent={deleteStudent}
           addRevenue={addRevenue}
           addExpense={addExpense}
           softDeleteFinance={softDeleteFinance}
@@ -632,12 +646,13 @@ function PublicSite({ store, onTrackMagneetoz }: { store: Store; onTrackMagneeto
   );
 }
 
-function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, addRevenue, addExpense, softDeleteFinance, uploadLogo, selectedStudentId, setSelectedStudentId, studentQuery, setStudentQuery, feeFilter, setFeeFilter }: {
+function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, deleteStudent, addRevenue, addExpense, softDeleteFinance, uploadLogo, selectedStudentId, setSelectedStudentId, studentQuery, setStudentQuery, feeFilter, setFeeFilter }: {
   store: Store;
   stats: { occupied: number; vacant: number; collection: number; pending: number; complaintsPending: number; complaintsResolved: number };
   patchStore: (patch: Partial<Store>) => void;
   addStudent: (formData: FormData) => void | Promise<void>;
   addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void;
+  deleteStudent: (studentId: string) => void;
   addRevenue: (formData: FormData) => void;
   addExpense: (formData: FormData) => void;
   softDeleteFinance: (type: "revenue" | "expense", id: string) => void;
@@ -732,7 +747,10 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, addR
                     <p className={`mt-1 text-sm font-black ${balance(student) === 0 ? "text-emerald-700" : "text-rose-700"}`}>{balance(student) === 0 ? "This month payment done" : `${money(balance(student))} pending`}</p>
                     {student.status === "Left" && <p className="mt-1 text-sm font-black text-zinc-500">Left on {student.exitDate}</p>}
                   </div>
-                  <span className="btn btn-light">Open Details</span>
+                  <div className="flex flex-wrap gap-2">
+                    {student.status !== "Left" && balance(student) > 0 && <a className="btn bg-emerald-600 text-white" href={whatsappReminderLink(store.settings.pgName, student)} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>WhatsApp</a>}
+                    <span className="btn btn-light">Open Details</span>
+                  </div>
                 </div>
                 <div className="mt-3 grid gap-2 text-sm text-zinc-500">
                   {student.paymentHistory.map((payment) => <span key={payment.id}>{payment.date} | {payment.mode} | {money(payment.amount)} | {payment.receiptId}</span>)}
@@ -743,7 +761,7 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, addR
           </div>
         </div>
 
-        {selectedStudent && <StudentDetailModal student={selectedStudent} store={store} patchStore={patchStore} addPayment={addPayment} onClose={() => setSelectedStudentId("")} />}
+        {selectedStudent && <StudentDetailModal student={selectedStudent} store={store} patchStore={patchStore} addPayment={addPayment} deleteStudent={deleteStudent} onClose={() => setSelectedStudentId("")} />}
 
         <AdminContent store={store} patchStore={patchStore} uploadLogo={uploadLogo} />
         <FinanceDashboard store={store} addRevenue={addRevenue} addExpense={addExpense} softDeleteFinance={softDeleteFinance} />
@@ -864,8 +882,8 @@ function FinanceDashboard({ store, addRevenue, addExpense, softDeleteFinance }: 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <div className="premium-card p-5">
           <h3 className="text-xl font-black">Monthly Revenue / Expense / Profit</h3>
-          <div className="mt-4 h-72">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="mt-4 min-h-[288px] min-w-0" style={{ width: "100%", height: 288 }}>
+            <ResponsiveContainer width="100%" height={288} minWidth={0} minHeight={240}>
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#eadfce" />
                 <XAxis dataKey="month" />
@@ -880,8 +898,8 @@ function FinanceDashboard({ store, addRevenue, addExpense, softDeleteFinance }: 
         </div>
         <div className="premium-card p-5">
           <h3 className="text-xl font-black">Top Expense Categories</h3>
-          <div className="mt-4 h-72">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="mt-4 min-h-[288px] min-w-0" style={{ width: "100%", height: 288 }}>
+            <ResponsiveContainer width="100%" height={288} minWidth={0} minHeight={240}>
               <BarChart data={categoryData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#eadfce" />
                 <XAxis dataKey="category" />
@@ -938,7 +956,7 @@ function FinanceTable({ title, type, rows, onDelete }: { title: string; type: "r
   return <div className="premium-card p-5"><h3 className="text-xl font-black">{title}</h3><div className="mt-3 grid gap-2">{rows.length ? rows.map((row) => <div key={row.id} className="grid gap-3 rounded-2xl bg-white/70 p-3 sm:grid-cols-[1fr_auto_auto] sm:items-center"><div><strong>{row.category}</strong><p className="text-sm text-zinc-500">{type === "revenue" ? (row as RevenueEntry).date : (row as ExpenseEntry).expenseDate} | {row.paymentMode}</p></div><strong>{money(row.amount)}</strong><button className="btn btn-light" onClick={() => onDelete(type, row.id)}>Delete</button></div>) : <p className="text-zinc-500">No entries yet.</p>}</div></div>;
 }
 
-function StudentDetailModal({ student, store, patchStore, addPayment, onClose }: { student: Student; store: Store; patchStore: (patch: Partial<Store>) => void; addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void; onClose: () => void }) {
+function StudentDetailModal({ student, store, patchStore, addPayment, deleteStudent, onClose }: { student: Student; store: Store; patchStore: (patch: Partial<Store>) => void; addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void; deleteStudent: (studentId: string) => void; onClose: () => void }) {
   const pending = balance(student);
   const paid = student.paidAmount;
   const due = totalDue(student);
@@ -1017,6 +1035,13 @@ function StudentDetailModal({ student, store, patchStore, addPayment, onClose }:
               <button className="btn btn-light">Mark Student Left</button>
             </form>
           )}
+          <button className="btn border border-rose-200 bg-rose-50 text-rose-700" onClick={() => {
+            const first = window.confirm(`Delete ${student.fullName}? This will remove student details from admin list.`);
+            if (!first) return;
+            const second = window.confirm("Final confirmation: Are you absolutely sure? This action cannot be undone.");
+            if (!second) return;
+            deleteStudent(student.studentId);
+          }}>Delete Student</button>
         </div>
       </div>
       <div className="px-5 pb-6 lg:px-7">
@@ -1292,6 +1317,43 @@ function createRevenueEntry(input: Omit<RevenueEntry, "id" | "date" | "createdAt
   return { id: crypto.randomUUID(), date: input.date || todayIso(), createdAt: now, updatedAt: now, deleted: false, ...input };
 }
 
+function createInitialStudentRevenue(student: Student) {
+  const entries: RevenueEntry[] = [];
+  let remaining = student.paidAmount;
+  const base = {
+    propertyId: pgSourceId,
+    paymentMode: "Cash" as PaymentMode,
+    tenantId: student.studentId,
+    tenantName: student.fullName,
+    date: student.joiningDate,
+    proofUrl: ""
+  };
+
+  if (remaining > 0 && student.securityAmount > 0) {
+    const securityAmount = Math.min(remaining, student.securityAmount);
+    entries.push(createRevenueEntry({
+      ...base,
+      category: "Security Deposit Collection",
+      amount: securityAmount,
+      receiptNumber: `SEC-${Date.now()}`,
+      notes: `Initial security deposit collected during admission from ${student.fullName}`
+    }));
+    remaining -= securityAmount;
+  }
+
+  if (remaining > 0) {
+    entries.push(createRevenueEntry({
+      ...base,
+      category: "Room Rent Collection",
+      amount: remaining,
+      receiptNumber: `RENT-${Date.now()}`,
+      notes: `Initial rent/fee collected during admission from ${student.fullName}`
+    }));
+  }
+
+  return entries;
+}
+
 function createExpenseEntry(input: Omit<ExpenseEntry, "id" | "createdAt" | "updatedAt" | "deleted">) {
   const now = new Date().toISOString();
   return { id: crypto.randomUUID(), createdAt: now, updatedAt: now, deleted: false, ...input };
@@ -1555,4 +1617,21 @@ function escapeHtml(value: string) {
 
 function isEmbeddableMap(value: string) {
   return value.includes("google.com/maps/embed") || value.includes("www.google.com/maps/embed");
+}
+
+function whatsappReminderLink(hostelName: string, student: Student) {
+  const phone = student.phone.replace(/\D/g, "");
+  const amount = money(balance(student));
+  const dueDate = nextBillingDate(student.joiningDate);
+  const message = [
+    `Dear ${student.fullName},`,
+    `You have a pending due of ${amount} at ${hostelName}.`,
+    `Kindly clear it by today to keep your hostel account updated.`,
+    `Student ID: ${student.studentId}`,
+    `Room: ${student.roomNumber}, Bed: ${student.bedNumber}`,
+    `Next billing date: ${dueDate}`,
+    "If you have already paid, please ignore this message and share the payment receipt with admin.",
+    `Thank you, ${hostelName}`
+  ].join("\n");
+  return `https://wa.me/${phone.startsWith("91") ? phone : `91${phone}`}?text=${encodeURIComponent(message)}`;
 }
