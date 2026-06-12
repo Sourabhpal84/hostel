@@ -17,11 +17,12 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { complaints as seedComplaints, notices as seedNotices, rooms as seedRooms, settings as seedSettings, students as seedStudents } from "@/lib/mock-data";
 import { auth } from "@/lib/firebase";
 import { getCentralMagneetoz, listenCentralMagneetoz, listenMagneetozEvents, saveCentralMagneetoz, trackCentralMagneetozEvent } from "@/lib/magneetoz-central";
 import { listenPgSiteStore, savePgSiteStore } from "@/lib/pg-site-sync";
-import type { Complaint, ConnectedPgSite, MagneetozReferralEvent, Notice, Payment, Room, SiteSettings, Student } from "@/lib/types";
+import type { AuditLog, BudgetEntry, Complaint, ConnectedPgSite, ExpenseEntry, MagneetozReferralEvent, Notice, Payment, PaymentMode, RecurringExpense, RevenueEntry, Room, SiteSettings, Student } from "@/lib/types";
 
 type View = "public" | "adminLogin" | "studentLogin" | "magneetozLogin" | "admin" | "student" | "magneetoz";
 type Store = {
@@ -32,6 +33,11 @@ type Store = {
   rooms: Room[];
   magneetozEvents: MagneetozReferralEvent[];
   connectedPgSites: ConnectedPgSite[];
+  revenues: RevenueEntry[];
+  expenses: ExpenseEntry[];
+  budgets: BudgetEntry[];
+  recurringExpenses: RecurringExpense[];
+  auditLogs: AuditLog[];
 };
 
 const seedStore: Store = {
@@ -41,7 +47,12 @@ const seedStore: Store = {
   complaints: seedComplaints,
   rooms: seedRooms,
   magneetozEvents: [],
-  connectedPgSites: [{ id: "ap-boys-hostel", name: seedSettings.pgName, sourceId: "APBOYS" }]
+  connectedPgSites: [{ id: "ap-boys-hostel", name: seedSettings.pgName, sourceId: "APBOYS" }],
+  revenues: [],
+  expenses: [],
+  budgets: [],
+  recurringExpenses: [],
+  auditLogs: []
 };
 
 const days = Object.keys(seedSettings.foodTimetable);
@@ -50,6 +61,8 @@ const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "admin123";
 const magneetozEmail = process.env.NEXT_PUBLIC_MAGNEETOZ_EMAIL || "magneetoz73@gmail.com";
 const magneetozPassword = process.env.NEXT_PUBLIC_MAGNEETOZ_PASSWORD || "LURlum8423@";
 const pgSourceId = process.env.NEXT_PUBLIC_PG_SOURCE_ID || "APBOYS";
+const revenueCategories = ["Room Rent Collection", "Security Deposit Collection", "Late Payment Charges", "Food/Mess Charges", "Laundry Charges", "Parking Charges", "Electricity Charges", "Miscellaneous Income", "Other Custom Income Sources"];
+const expenseCategories = ["Electricity Bill", "Water Bill", "Internet/WiFi", "Staff Salary", "Maintenance", "Cleaning", "Security Guard", "Food/Mess Expenses", "Laundry Expenses", "Gas Cylinder", "Furniture Purchase", "Appliance Purchase", "Repairs", "Marketing", "Transportation", "Rent", "Taxes", "Other Expenses"];
 
 export default function Home() {
   const [store, setStore] = useState<Store>(seedStore);
@@ -237,13 +250,64 @@ export default function Home() {
       date: new Date().toISOString().slice(0, 10),
       receiptId: `REC-${Date.now()}`
     };
+    const revenue = createRevenueEntry({
+      propertyId: pgSourceId,
+      category: "Room Rent Collection",
+      amount: payableAmount,
+      paymentMode: mode === "Bank" ? "Bank Transfer" : mode,
+      receiptNumber: payment.receiptId,
+      tenantId: target?.studentId,
+      tenantName: target?.fullName,
+      notes: `Auto revenue from ${target?.fullName || studentId} fee payment`
+    });
+    const audit = createAudit("revenue", revenue.id, "added", `Auto revenue created for fee payment ${payment.receiptId}`);
     patchStore({
       students: store.students.map((student) =>
         student.studentId === studentId
           ? { ...student, paidAmount: student.paidAmount + payableAmount, paymentHistory: [payment, ...student.paymentHistory] }
           : student
-      )
+      ),
+      revenues: [revenue, ...store.revenues],
+      auditLogs: [audit, ...store.auditLogs]
     });
+  }
+
+  function addRevenue(formData: FormData) {
+    const revenue = createRevenueEntry({
+      propertyId: pgSourceId,
+      category: String(formData.get("category")),
+      amount: Number(formData.get("amount")),
+      paymentMode: formData.get("paymentMode") as PaymentMode,
+      receiptNumber: String(formData.get("receiptNumber") || `REV-${Date.now()}`),
+      tenantId: String(formData.get("tenantId") || ""),
+      tenantName: String(formData.get("tenantName") || ""),
+      notes: String(formData.get("notes") || ""),
+      proofUrl: String(formData.get("proofUrl") || "")
+    });
+    patchStore({ revenues: [revenue, ...store.revenues], auditLogs: [createAudit("revenue", revenue.id, "added", `Revenue added: ${revenue.category}`), ...store.auditLogs] });
+  }
+
+  function addExpense(formData: FormData) {
+    const expense = createExpenseEntry({
+      propertyId: pgSourceId,
+      category: String(formData.get("category")),
+      amount: Number(formData.get("amount")),
+      paymentMode: formData.get("paymentMode") as PaymentMode,
+      vendorName: String(formData.get("vendorName") || ""),
+      invoiceNumber: String(formData.get("invoiceNumber") || `EXP-${Date.now()}`),
+      expenseDate: String(formData.get("expenseDate") || todayIso()),
+      notes: String(formData.get("notes") || ""),
+      proofUrl: String(formData.get("proofUrl") || "")
+    });
+    patchStore({ expenses: [expense, ...store.expenses], auditLogs: [createAudit("expense", expense.id, "added", `Expense added: ${expense.category}`), ...store.auditLogs] });
+  }
+
+  function softDeleteFinance(type: "revenue" | "expense", id: string) {
+    if (type === "revenue") {
+      patchStore({ revenues: store.revenues.map((entry) => entry.id === id ? { ...entry, deleted: true, updatedAt: new Date().toISOString() } : entry), auditLogs: [createAudit("revenue", id, "deleted", "Revenue soft deleted"), ...store.auditLogs] });
+      return;
+    }
+    patchStore({ expenses: store.expenses.map((entry) => entry.id === id ? { ...entry, deleted: true, updatedAt: new Date().toISOString() } : entry), auditLogs: [createAudit("expense", id, "deleted", "Expense soft deleted"), ...store.auditLogs] });
   }
 
   async function payOnline(student: Student) {
@@ -363,6 +427,9 @@ export default function Home() {
           patchStore={patchStore}
           addStudent={addStudent}
           addPayment={addPayment}
+          addRevenue={addRevenue}
+          addExpense={addExpense}
+          softDeleteFinance={softDeleteFinance}
           uploadLogo={uploadLogo}
           selectedStudentId={selectedStudentId}
           setSelectedStudentId={setSelectedStudentId}
@@ -565,12 +632,15 @@ function PublicSite({ store, onTrackMagneetoz }: { store: Store; onTrackMagneeto
   );
 }
 
-function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, uploadLogo, selectedStudentId, setSelectedStudentId, studentQuery, setStudentQuery, feeFilter, setFeeFilter }: {
+function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, addRevenue, addExpense, softDeleteFinance, uploadLogo, selectedStudentId, setSelectedStudentId, studentQuery, setStudentQuery, feeFilter, setFeeFilter }: {
   store: Store;
   stats: { occupied: number; vacant: number; collection: number; pending: number; complaintsPending: number; complaintsResolved: number };
   patchStore: (patch: Partial<Store>) => void;
   addStudent: (formData: FormData) => void | Promise<void>;
   addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void;
+  addRevenue: (formData: FormData) => void;
+  addExpense: (formData: FormData) => void;
+  softDeleteFinance: (type: "revenue" | "expense", id: string) => void;
   uploadLogo: (file: File) => void;
   selectedStudentId: string;
   setSelectedStudentId: (id: string) => void;
@@ -676,6 +746,7 @@ function AdminDashboard({ store, stats, patchStore, addStudent, addPayment, uplo
         {selectedStudent && <StudentDetailModal student={selectedStudent} store={store} patchStore={patchStore} addPayment={addPayment} onClose={() => setSelectedStudentId("")} />}
 
         <AdminContent store={store} patchStore={patchStore} uploadLogo={uploadLogo} />
+        <FinanceDashboard store={store} addRevenue={addRevenue} addExpense={addExpense} softDeleteFinance={softDeleteFinance} />
       </div>
     </section>
   );
@@ -743,6 +814,128 @@ function AdminContent({ store, patchStore, uploadLogo }: { store: Store; patchSt
       <FoodTimetableManager store={store} patchStore={patchStore} />
     </>
   );
+}
+
+function FinanceDashboard({ store, addRevenue, addExpense, softDeleteFinance }: { store: Store; addRevenue: (formData: FormData) => void; addExpense: (formData: FormData) => void; softDeleteFinance: (type: "revenue" | "expense", id: string) => void }) {
+  const revenues = store.revenues.filter((entry) => !entry.deleted);
+  const expenses = store.expenses.filter((entry) => !entry.deleted);
+  const today = todayIso();
+  const month = today.slice(0, 7);
+  const year = today.slice(0, 4);
+  const revenueToday = sumAmount(revenues.filter((entry) => entry.date === today));
+  const expenseToday = sumAmount(expenses.filter((entry) => entry.expenseDate === today));
+  const revenueMonth = sumAmount(revenues.filter((entry) => entry.date.startsWith(month)));
+  const expenseMonth = sumAmount(expenses.filter((entry) => entry.expenseDate.startsWith(month)));
+  const revenueYear = sumAmount(revenues.filter((entry) => entry.date.startsWith(year)));
+  const expenseYear = sumAmount(expenses.filter((entry) => entry.expenseDate.startsWith(year)));
+  const lifetimeRevenue = sumAmount(revenues);
+  const lifetimeExpense = sumAmount(expenses);
+  const chartData = buildMonthlyFinanceData(revenues, expenses);
+  const categoryData = topCategories(expenses);
+
+  return (
+    <section className="lg:col-span-3">
+      <div className="mt-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="eyebrow">Finance</p>
+          <h2 className="text-4xl font-black tracking-tight">Revenue, Expense & Profit Dashboard</h2>
+        </div>
+        <div className="flex gap-2">
+          <button className="btn btn-light" onClick={() => exportFinanceCsv(revenues, expenses)}>Export CSV</button>
+          <button className="btn btn-dark" onClick={() => downloadFinancePdf(store)}>P&L PDF</button>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <FinanceCard label="Revenue Today" value={money(revenueToday)} tone="emerald" />
+        <FinanceCard label="Expense Today" value={money(expenseToday)} tone="rose" />
+        <FinanceCard label="Net Today" value={money(revenueToday - expenseToday)} tone="amber" />
+        <FinanceCard label="Closing Balance" value={money(lifetimeRevenue - lifetimeExpense)} tone="zinc" />
+        <FinanceCard label="Revenue This Month" value={money(revenueMonth)} tone="emerald" />
+        <FinanceCard label="Expense This Month" value={money(expenseMonth)} tone="rose" />
+        <FinanceCard label="Profit This Month" value={money(revenueMonth - expenseMonth)} tone="amber" />
+        <FinanceCard label="Lifetime Profit" value={money(lifetimeRevenue - lifetimeExpense)} tone="zinc" />
+        <FinanceCard label="Revenue This Year" value={money(revenueYear)} tone="emerald" />
+        <FinanceCard label="Expense This Year" value={money(expenseYear)} tone="rose" />
+        <FinanceCard label="Profit This Year" value={money(revenueYear - expenseYear)} tone="amber" />
+        <FinanceCard label="Profit %" value={`${percent(lifetimeRevenue - lifetimeExpense, lifetimeRevenue)}%`} tone="zinc" />
+      </div>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <div className="premium-card p-5">
+          <h3 className="text-xl font-black">Monthly Revenue / Expense / Profit</h3>
+          <div className="mt-4 h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eadfce" />
+                <XAxis dataKey="month" />
+                <YAxis />
+                <Tooltip />
+                <Line dataKey="revenue" stroke="#059669" strokeWidth={3} />
+                <Line dataKey="expense" stroke="#e11d48" strokeWidth={3} />
+                <Line dataKey="profit" stroke="#b98122" strokeWidth={3} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="premium-card p-5">
+          <h3 className="text-xl font-black">Top Expense Categories</h3>
+          <div className="mt-4 h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={categoryData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eadfce" />
+                <XAxis dataKey="category" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="amount" fill="#b98122" radius={[10, 10, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <FinanceEntryForm title="Add Revenue Entry" type="revenue" onSubmit={addRevenue} />
+        <FinanceEntryForm title="Add Expense Entry" type="expense" onSubmit={addExpense} />
+      </div>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <FinanceTable title="Revenue Entries" type="revenue" rows={revenues.slice(0, 10)} onDelete={softDeleteFinance} />
+        <FinanceTable title="Expense Entries" type="expense" rows={expenses.slice(0, 10)} onDelete={softDeleteFinance} />
+      </div>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-3">
+        <div className="premium-card p-5"><h3 className="text-xl font-black">Cash Flow</h3><p className="mt-3">Opening Balance: {money(0)}</p><p>Cash Inflow: {money(lifetimeRevenue)}</p><p>Cash Outflow: {money(lifetimeExpense)}</p><p className="font-black">Closing Balance: {money(lifetimeRevenue - lifetimeExpense)}</p></div>
+        <div className="premium-card p-5"><h3 className="text-xl font-black">Budgets</h3><p className="mt-3 text-zinc-600">Monthly and category budgets are stored in the scalable data model. Add values from future budget controls.</p><p className="mt-2 font-black">{store.budgets.length} budget records</p></div>
+        <div className="premium-card p-5"><h3 className="text-xl font-black">Audit Logs</h3><div className="mt-3 grid gap-2 text-sm">{store.auditLogs.slice(0, 5).map((log) => <p key={log.id} className="rounded-2xl bg-white/70 p-3">{log.timestamp.slice(0, 10)} | {log.action} | {log.summary}</p>)}</div></div>
+      </div>
+    </section>
+  );
+}
+
+function FinanceCard({ label, value, tone }: { label: string; value: string; tone: "emerald" | "rose" | "amber" | "zinc" }) {
+  const toneClass = tone === "emerald" ? "text-emerald-700 bg-emerald-50" : tone === "rose" ? "text-rose-700 bg-rose-50" : tone === "amber" ? "text-amber-800 bg-amber-50" : "text-zinc-800 bg-zinc-100";
+  return <div className="premium-card p-5"><span className={`rounded-full px-3 py-1 text-xs font-black ${toneClass}`}>{label}</span><strong className="mt-4 block text-2xl">{value}</strong></div>;
+}
+
+function FinanceEntryForm({ title, type, onSubmit }: { title: string; type: "revenue" | "expense"; onSubmit: (formData: FormData) => void }) {
+  const categories = type === "revenue" ? revenueCategories : expenseCategories;
+  return (
+    <form className="premium-card grid gap-3 p-5" action={onSubmit}>
+      <h3 className="text-xl font-black">{title}</h3>
+      <select name="category" className="field">{categories.map((item) => <option key={item}>{item}</option>)}</select>
+      <input name="amount" type="number" className="field" placeholder="Amount" required />
+      <select name="paymentMode" className="field"><option>Cash</option><option>UPI</option><option>Bank Transfer</option><option>Card</option><option>Razorpay</option></select>
+      {type === "revenue" ? <><input name="tenantName" className="field" placeholder="Tenant name optional" /><input name="receiptNumber" className="field" placeholder="Receipt number" /></> : <><input name="vendorName" className="field" placeholder="Vendor name" /><input name="invoiceNumber" className="field" placeholder="Invoice number" /><input name="expenseDate" type="date" className="field" /></>}
+      <input name="proofUrl" className="field" placeholder="Bill/receipt image or PDF URL" />
+      <textarea name="notes" className="field" placeholder="Notes" />
+      <button className="btn btn-dark">Save {type}</button>
+    </form>
+  );
+}
+
+function FinanceTable({ title, type, rows, onDelete }: { title: string; type: "revenue" | "expense"; rows: Array<RevenueEntry | ExpenseEntry>; onDelete: (type: "revenue" | "expense", id: string) => void }) {
+  return <div className="premium-card p-5"><h3 className="text-xl font-black">{title}</h3><div className="mt-3 grid gap-2">{rows.length ? rows.map((row) => <div key={row.id} className="grid gap-3 rounded-2xl bg-white/70 p-3 sm:grid-cols-[1fr_auto_auto] sm:items-center"><div><strong>{row.category}</strong><p className="text-sm text-zinc-500">{type === "revenue" ? (row as RevenueEntry).date : (row as ExpenseEntry).expenseDate} | {row.paymentMode}</p></div><strong>{money(row.amount)}</strong><button className="btn btn-light" onClick={() => onDelete(type, row.id)}>Delete</button></div>) : <p className="text-zinc-500">No entries yet.</p>}</div></div>;
 }
 
 function StudentDetailModal({ student, store, patchStore, addPayment, onClose }: { student: Student; store: Store; patchStore: (patch: Partial<Store>) => void; addPayment: (studentId: string, amount: number, mode?: Payment["mode"]) => void; onClose: () => void }) {
@@ -1090,6 +1283,87 @@ function parseDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function createRevenueEntry(input: Omit<RevenueEntry, "id" | "date" | "createdAt" | "updatedAt" | "deleted"> & { date?: string }) {
+  const now = new Date().toISOString();
+  return { id: crypto.randomUUID(), date: input.date || todayIso(), createdAt: now, updatedAt: now, deleted: false, ...input };
+}
+
+function createExpenseEntry(input: Omit<ExpenseEntry, "id" | "createdAt" | "updatedAt" | "deleted">) {
+  const now = new Date().toISOString();
+  return { id: crypto.randomUUID(), createdAt: now, updatedAt: now, deleted: false, ...input };
+}
+
+function createAudit(entityType: AuditLog["entityType"], entityId: string, action: AuditLog["action"], summary: string): AuditLog {
+  return { id: crypto.randomUUID(), propertyId: pgSourceId, entityType, entityId, action, actor: adminEmail, timestamp: new Date().toISOString(), summary };
+}
+
+function sumAmount(entries: Array<{ amount: number }>) {
+  return entries.reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+}
+
+function percent(value: number, total: number) {
+  return total ? Math.round((value / total) * 100) : 0;
+}
+
+function buildMonthlyFinanceData(revenues: RevenueEntry[], expenses: ExpenseEntry[]) {
+  const months = Array.from(new Set([...revenues.map((entry) => entry.date.slice(0, 7)), ...expenses.map((entry) => entry.expenseDate.slice(0, 7)), todayIso().slice(0, 7)])).sort().slice(-12);
+  return months.map((month) => {
+    const revenue = sumAmount(revenues.filter((entry) => entry.date.startsWith(month)));
+    const expense = sumAmount(expenses.filter((entry) => entry.expenseDate.startsWith(month)));
+    return { month, revenue, expense, profit: revenue - expense };
+  });
+}
+
+function topCategories(expenses: ExpenseEntry[]) {
+  const totals = expenses.reduce<Record<string, number>>((result, entry) => {
+    result[entry.category] = (result[entry.category] || 0) + entry.amount;
+    return result;
+  }, {});
+  return Object.entries(totals).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount).slice(0, 8);
+}
+
+function exportFinanceCsv(revenues: RevenueEntry[], expenses: ExpenseEntry[]) {
+  const rows = ["type,category,amount,paymentMode,date,party,reference,notes"];
+  revenues.forEach((entry) => rows.push(`Revenue,${csv(entry.category)},${entry.amount},${entry.paymentMode},${entry.date},${csv(entry.tenantName || "")},${csv(entry.receiptNumber)},${csv(entry.notes)}`));
+  expenses.forEach((entry) => rows.push(`Expense,${csv(entry.category)},${entry.amount},${entry.paymentMode},${entry.expenseDate},${csv(entry.vendorName)},${csv(entry.invoiceNumber)},${csv(entry.notes)}`));
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `finance-report-${todayIso()}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function csv(value: string) {
+  return `"${String(value).replaceAll('"', '""')}"`;
+}
+
+function downloadFinancePdf(store: Store) {
+  const revenues = store.revenues.filter((entry) => !entry.deleted);
+  const expenses = store.expenses.filter((entry) => !entry.deleted);
+  const revenue = sumAmount(revenues);
+  const expense = sumAmount(expenses);
+  openPdfWindow(store.settings.pgName, "Profit & Loss Statement", `
+    <section class="student">
+      <div class="grid">
+        <div><span>Gross Revenue</span><strong>${money(revenue)}</strong></div>
+        <div><span>Total Expenses</span><strong>${money(expense)}</strong></div>
+        <div><span>Net Profit</span><strong>${money(revenue - expense)}</strong></div>
+        <div><span>Profit Percentage</span><strong>${percent(revenue - expense, revenue)}%</strong></div>
+      </div>
+      <h3>Recent Revenue</h3>
+      <table><tbody>${revenues.slice(0, 20).map((entry) => `<tr><td>${entry.date}</td><td>${escapeHtml(entry.category)}</td><td>${money(entry.amount)}</td></tr>`).join("")}</tbody></table>
+      <h3>Recent Expenses</h3>
+      <table><tbody>${expenses.slice(0, 20).map((entry) => `<tr><td>${entry.expenseDate}</td><td>${escapeHtml(entry.category)}</td><td>${money(entry.amount)}</td></tr>`).join("")}</tbody></table>
+    </section>
+  `);
+}
+
 function money(value: number) {
   return `Rs. ${value.toLocaleString("en-IN")}`;
 }
@@ -1136,7 +1410,12 @@ function normalizeStore(saved: Partial<Store>): Store {
     complaints: saved.complaints || seedStore.complaints,
     rooms: saved.rooms || seedStore.rooms,
     magneetozEvents: saved.magneetozEvents || seedStore.magneetozEvents,
-    connectedPgSites: saved.connectedPgSites || seedStore.connectedPgSites
+    connectedPgSites: saved.connectedPgSites || seedStore.connectedPgSites,
+    revenues: saved.revenues || seedStore.revenues,
+    expenses: saved.expenses || seedStore.expenses,
+    budgets: saved.budgets || seedStore.budgets,
+    recurringExpenses: saved.recurringExpenses || seedStore.recurringExpenses,
+    auditLogs: saved.auditLogs || seedStore.auditLogs
   };
 }
 

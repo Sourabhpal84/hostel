@@ -111,3 +111,69 @@ export type ConnectedPgSite = {
   name: string;
   sourceId: string;
 };
+
+export type PaymentMode = "Cash" | "UPI" | "Bank Transfer" | "Card" | "Razorpay";
+
+export type RevenueEntry = {
+  id: string;
+  propertyId: string;
+  category: string;
+  amount: number;
+  paymentMode: PaymentMode;
+  date: string;
+  receiptNumber: string;
+  tenantId?: string;
+  tenantName?: string;
+  notes: string;
+  proofUrl?: string;
+  deleted?: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ExpenseEntry = {
+  id: string;
+  propertyId: string;
+  category: string;
+  amount: number;
+  paymentMode: PaymentMode;
+  expenseDate: string;
+  vendorName: string;
+  invoiceNumber: string;
+  notes: string;
+  proofUrl?: string;
+  recurring?: boolean;
+  deleted?: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BudgetEntry = {
+  id: string;
+  propertyId: string;
+  month: string;
+  category: string;
+  amount: number;
+};
+
+export type RecurringExpense = {
+  id: string;
+  propertyId: string;
+  category: string;
+  vendorName: string;
+  amount: number;
+  paymentMode: PaymentMode;
+  dayOfMonth: number;
+  active: boolean;
+};
+
+export type AuditLog = {
+  id: string;
+  propertyId: string;
+  entityType: "revenue" | "expense" | "budget" | "recurring";
+  entityId: string;
+  action: "added" | "edited" | "deleted";
+  actor: string;
+  timestamp: string;
+  summary: string;
+};
