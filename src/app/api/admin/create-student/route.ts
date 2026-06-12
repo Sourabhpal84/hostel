@@ -14,6 +14,9 @@ export async function POST(request: Request) {
   if (!email || !password || !displayName || !student) {
     return NextResponse.json({ error: "Student email, password and profile are required." }, { status: 400 });
   }
+  if (String(password).length < 6) {
+    return NextResponse.json({ error: "Student password kam se kam 6 characters ka hona chahiye." }, { status: 400 });
+  }
 
   let userRecord;
   try {
@@ -29,11 +32,15 @@ export async function POST(request: Request) {
     }
     userRecord = await adminAuth.getUserByEmail(email);
   }
+  await adminAuth.setCustomUserClaims(userRecord.uid, { role: "student" });
+
+  const { password: _password, ...safeStudent } = student;
 
   const profile = {
-    ...student,
+    ...safeStudent,
     id: userRecord.uid,
     uid: userRecord.uid,
+    role: "student",
     createdAt: new Date().toISOString()
   };
 

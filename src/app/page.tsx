@@ -19,8 +19,8 @@ import { useEffect, useMemo, useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { complaints as seedComplaints, notices as seedNotices, rooms as seedRooms, settings as seedSettings, students as seedStudents } from "@/lib/mock-data";
-import { auth } from "@/lib/firebase";
-import { getCentralMagneetoz, listenCentralMagneetoz, listenMagneetozEvents, saveCentralMagneetoz, trackCentralMagneetozEvent } from "@/lib/magneetoz-central";
+import { auth, db, firebaseReady } from "@/lib/firebase";
+import { getCentralMagneetoz, listenCentralMagneetoz, listenConnectedPgSites, listenMagneetozEvents, registerConnectedPgSite, saveCentralMagneetoz, trackCentralMagneetozEvent } from "@/lib/magneetoz-central";
 import { listenPgSiteStore, savePgSiteStore } from "@/lib/pg-site-sync";
 import type { AuditLog, BudgetEntry, Complaint, ConnectedPgSite, ExpenseEntry, MagneetozReferralEvent, Notice, Payment, PaymentMode, RecurringExpense, RevenueEntry, Room, SiteSettings, Student } from "@/lib/types";
 
@@ -63,6 +63,36 @@ const magneetozPassword = process.env.NEXT_PUBLIC_MAGNEETOZ_PASSWORD || "LURlum8
 const pgSourceId = process.env.NEXT_PUBLIC_PG_SOURCE_ID || "APBOYS";
 const revenueCategories = ["Room Rent Collection", "Security Deposit Collection", "Late Payment Charges", "Food/Mess Charges", "Laundry Charges", "Parking Charges", "Electricity Charges", "Miscellaneous Income", "Other Custom Income Sources"];
 const expenseCategories = ["Electricity Bill", "Water Bill", "Internet/WiFi", "Staff Salary", "Maintenance", "Cleaning", "Security Guard", "Food/Mess Expenses", "Laundry Expenses", "Gas Cylinder", "Furniture Purchase", "Appliance Purchase", "Repairs", "Marketing", "Transportation", "Rent", "Taxes", "Other Expenses"];
+const isDev = process.env.NODE_ENV === "development";
+
+function debugFirebase(label: string, detail?: unknown) {
+  if (isDev) console.log(`[Firebase] ${label}`, detail ?? "");
+}
+
+function firebaseConfigError() {
+  return firebaseReady && auth && db ? "" : "Firebase environment variables missing hain. .env.local me NEXT_PUBLIC_FIREBASE_* values add karke dev server restart karo.";
+}
+
+function friendlyAuthError(error: unknown) {
+  const code = typeof error === "object" && error && "code" in error ? String((error as { code?: string }).code) : "";
+  if (code === "auth/user-not-found") return "Student account Firebase Auth me create nahi hua. Admin se admission dobara create karvao.";
+  if (code === "auth/wrong-password" || code === "auth/invalid-credential") return "Wrong email or password.";
+  if (code === "auth/invalid-email") return "Invalid email address.";
+  if (code === "auth/too-many-requests") return "Too many failed attempts. Thodi der baad try karo.";
+  if (error instanceof Error && error.message) return error.message;
+  return "Firebase login failed. Email/password aur Firebase settings check karo.";
+}
+
+async function fetchAuthProfile(token: string, expectedRole: "admin" | "student" | "magneetoz") {
+  const response = await fetch("/api/auth/profile", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, expectedRole })
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Firebase profile verify nahi ho paya.");
+  return result;
+}
 
 export default function Home() {
   const [store, setStore] = useState<Store>(seedStore);
@@ -131,8 +161,12 @@ export default function Home() {
     const unsubscribeEvents = listenMagneetozEvents((events) => {
       setStore((current) => ({ ...current, magneetozEvents: events }));
     });
+    const unsubscribeSites = listenConnectedPgSites((sites) => {
+      setStore((current) => ({ ...current, connectedPgSites: sites.length ? sites : current.connectedPgSites }));
+    });
     return () => {
       unsubscribeEvents();
+      unsubscribeSites();
     };
   }, [view]);
 
@@ -172,7 +206,7 @@ export default function Home() {
   }
 
   function trackMagneetozClick() {
-    const referralCode = store.settings.magneetoz.referralEnabled ? `${store.settings.magneetoz.referralCodePrefix}-${pgSourceId}` : pgSourceId;
+    const referralCode = store.settings.magneetoz.pgCoupons?.[pgSourceId] || (store.settings.magneetoz.referralEnabled ? `${store.settings.magneetoz.referralCodePrefix}-${pgSourceId}` : pgSourceId);
     const event: MagneetozReferralEvent = {
       id: crypto.randomUUID(),
       pgSourceId,
@@ -187,6 +221,7 @@ export default function Home() {
   }
 
   async function addStudent(formData: FormData) {
+    const studentPassword = String(formData.get("password"));
     const student: Student = {
       id: crypto.randomUUID(),
       studentId: `IPG-${1000 + store.students.length + 1}`,
@@ -194,7 +229,6 @@ export default function Home() {
       fatherName: String(formData.get("fatherName")),
       phone: String(formData.get("phone")),
       email: String(formData.get("email")),
-      password: String(formData.get("password")),
       aadhaar: String(formData.get("aadhaar")),
       address: String(formData.get("address")),
       joiningDate: String(formData.get("joiningDate")),
@@ -214,10 +248,11 @@ export default function Home() {
     );
     let loginCreated = false;
     try {
+      debugFirebase("creating student auth account", student.email);
       const response = await fetch("/api/admin/create-student", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: student.email, password: student.password, displayName: student.fullName, student })
+        body: JSON.stringify({ email: student.email, password: studentPassword, displayName: student.fullName, student })
       });
       if (!response.ok) {
         const result = await response.json();
@@ -226,6 +261,7 @@ export default function Home() {
         const result = await response.json();
         student.id = result.uid || student.id;
         loginCreated = true;
+        debugFirebase("student auth user created", result.uid);
       }
     } catch {
       setMessage("Student local add ho gaya, lekin Firebase Auth create nahi hua. Firebase Admin env setup karo.");
@@ -234,7 +270,7 @@ export default function Home() {
     const initialAuditLogs = initialRevenueEntries.map((entry) => createAudit("revenue", entry.id, "added", `Initial admission revenue created for ${student.fullName}`));
     patchStore({ students: [student, ...store.students], rooms, revenues: [...initialRevenueEntries, ...store.revenues], auditLogs: [...initialAuditLogs, ...store.auditLogs] });
     if (loginCreated) {
-      setMessage(`Admission added. Student can login with ${student.email} / ${student.password}`);
+      setMessage(`Admission added. Student can login with ${student.email} / password jo admin ne set kiya hai.`);
     }
   }
 
@@ -367,36 +403,56 @@ export default function Home() {
   async function submitStudentLogin(formData: FormData) {
     const email = String(formData.get("email"));
     const password = String(formData.get("password"));
-    if (auth) {
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-      } catch {
-        setMessage("Firebase student login failed. Email/password check karo.");
-        return;
-      }
-    }
-    const student = store.students.find((item) => item.email === email && (auth || item.password === password));
-    if (!student) {
-      setMessage("Student email/password match nahi hua.");
+    const configMessage = firebaseConfigError();
+    if (configMessage) {
+      setMessage(configMessage);
+      debugFirebase("student login blocked: config missing");
       return;
     }
-    setActiveStudentId(student.studentId);
-    setView("student");
-    setMessage("");
+    try {
+      const credential = await signInWithEmailAndPassword(auth!, email, password);
+      debugFirebase("student auth login success", credential.user.uid);
+      const profile = await fetchAuthProfile(await credential.user.getIdToken(), "student");
+      debugFirebase("student role check", profile.role);
+      const firebaseStudent = normalizeStudentFromFirebase(profile.student.id, profile.student);
+      setStore((current) => normalizeStore({
+        ...current,
+        students: [firebaseStudent, ...current.students.filter((item) => item.id !== firebaseStudent.id && item.email !== firebaseStudent.email && item.studentId !== firebaseStudent.studentId)]
+      }));
+      setActiveStudentId(firebaseStudent.studentId);
+      setView("student");
+      setMessage("");
+    } catch (error) {
+      debugFirebase("student login failed", error);
+      setMessage(friendlyAuthError(error));
+      return;
+    }
   }
 
   async function submitAdminLogin(formData: FormData) {
     const email = String(formData.get("email"));
     const password = String(formData.get("password"));
-    if (auth) {
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-      } catch {
-        setMessage("Firebase admin login failed. Email/password check karo.");
-        return;
-      }
+    const configMessage = firebaseConfigError();
+    if (configMessage) {
+      setMessage(configMessage);
+      debugFirebase("admin login blocked: config missing");
+      return;
     }
-    if (email === adminEmail && (!auth ? password === adminPassword : true)) {
+    try {
+      const credential = await signInWithEmailAndPassword(auth!, email, password);
+      debugFirebase("admin auth login success", credential.user.uid);
+      if (email !== adminEmail) {
+        const profile = await fetchAuthProfile(await credential.user.getIdToken(), "admin");
+        debugFirebase("admin role check", profile.role);
+      } else {
+        debugFirebase("admin role check", "env-admin-email");
+      }
+    } catch (error) {
+      debugFirebase("admin login failed", error);
+      setMessage(friendlyAuthError(error));
+      return;
+    }
+    if (email === adminEmail || (!firebaseReady && password === adminPassword)) {
       setView("admin");
       setMessage("");
       return;
@@ -407,15 +463,27 @@ export default function Home() {
   async function submitMagneetozLogin(formData: FormData) {
     const email = String(formData.get("email"));
     const password = String(formData.get("password"));
-    if (auth) {
-      try {
-        await signInWithEmailAndPassword(auth, email, password);
-      } catch {
-        setMessage("Firebase Magneetoz login failed. Email/password check karo.");
-        return;
-      }
+    const configMessage = firebaseConfigError();
+    if (configMessage) {
+      setMessage(configMessage);
+      debugFirebase("magneetoz login blocked: config missing");
+      return;
     }
-    if (email === magneetozEmail && (!auth ? password === magneetozPassword : true)) {
+    try {
+      const credential = await signInWithEmailAndPassword(auth!, email, password);
+      debugFirebase("magneetoz auth login success", credential.user.uid);
+      if (email !== magneetozEmail) {
+        const profile = await fetchAuthProfile(await credential.user.getIdToken(), "magneetoz");
+        debugFirebase("magneetoz role check", profile.role);
+      } else {
+        debugFirebase("magneetoz role check", "env-magneetoz-email");
+      }
+    } catch (error) {
+      debugFirebase("magneetoz login failed", error);
+      setMessage(friendlyAuthError(error));
+      return;
+    }
+    if (email === magneetozEmail || (!firebaseReady && password === magneetozPassword)) {
       setView("magneetoz");
       setMessage("");
       return;
@@ -553,7 +621,7 @@ function MagneetozBanner({ settings, pgSourceId, onTrack }: { settings: SiteSett
   }, [carouselImages.length]);
   const manualCoupon = settings.magneetoz.pgCoupons?.[source];
   const referralCode = manualCoupon || (settings.magneetoz.referralEnabled ? `${settings.magneetoz.referralCodePrefix}-${source}` : source);
-  const targetLink = `${settings.magneetoz.websiteLink}?source=${encodeURIComponent(pgSourceId || "PG")}&ref=${encodeURIComponent(referralCode)}`;
+  const targetLink = `${settings.magneetoz.websiteLink}?pg=${encodeURIComponent(source)}&coupon=${encodeURIComponent(referralCode)}&pgName=${encodeURIComponent(settings.pgName)}`;
   return (
     <section className="px-4 py-4 lg:px-14 lg:py-7">
       <a href={targetLink} onClick={onTrack} target="_blank" rel="noreferrer" className="group relative block h-[230px] overflow-hidden rounded-lg bg-zinc-950 text-white shadow-2xl sm:h-[320px] lg:h-auto lg:min-h-[68vh]">
@@ -1074,6 +1142,37 @@ function MagneetozManager({ store, patchStore }: { store: Store; patchStore: (pa
       revenue: events.reduce((sum, event) => sum + (event.orderValue || 0), 0)
     };
   });
+
+  function saveConnectedPg(data: FormData) {
+    const sourceId = String(data.get("sourceId") || "").trim().toUpperCase();
+    const name = String(data.get("pgName") || "").trim();
+    const couponCode = String(data.get("couponCode") || "").trim().toUpperCase();
+    if (!sourceId || !name || !couponCode) {
+      window.alert("PG name, source code aur coupon code required hai.");
+      return;
+    }
+    const site: ConnectedPgSite = {
+      id: sourceId,
+      sourceId,
+      name,
+      couponCode,
+      websiteUrl: String(data.get("websiteUrl") || "").trim(),
+      adminEmail: String(data.get("adminEmail") || "").trim(),
+      status: String(data.get("status") || "active") as ConnectedPgSite["status"],
+      notes: String(data.get("notes") || "").trim()
+    };
+    const nextCoupons = { ...store.settings.magneetoz.pgCoupons, [sourceId]: couponCode };
+    const magneetoz = { ...store.settings.magneetoz, pgCoupons: nextCoupons, referralEnabled: true };
+    patchStore({
+      connectedPgSites: [site, ...store.connectedPgSites.filter((item) => item.sourceId !== sourceId)],
+      settings: { ...store.settings, magneetoz }
+    });
+    void registerConnectedPgSite(site).catch(() => {
+      window.alert("PG central register nahi ho paaya. Firebase rules/env check karo.");
+    });
+    void saveCentralMagneetoz(magneetoz).catch(() => undefined);
+  }
+
   function savePromotion(data: FormData) {
     const magneetoz = {
       enabled: data.get("enabled") === "on",
@@ -1102,13 +1201,13 @@ function MagneetozManager({ store, patchStore }: { store: Store; patchStore: (pa
   return (
     <section className="section">
       <p className="eyebrow">Magneetoz Control</p>
-      <h1 className="mt-2 text-5xl font-black">Central Promotion & Analytics</h1>
+      <h1 className="mt-2 text-5xl font-black">Multi PG Control System</h1>
       <div className="mt-8 grid gap-4 sm:grid-cols-3">
         <div className="premium-card p-5 text-zinc-950"><strong className="block text-3xl">{totalClicks}</strong><span>Promotion clicks</span></div>
         <div className="premium-card p-5 text-zinc-950"><strong className="block text-3xl">{totalOrders}</strong><span>Total orders</span></div>
         <div className="premium-card p-5 text-zinc-950"><strong className="block text-3xl">{money(totalRevenue)}</strong><span>Total revenue</span></div>
       </div>
-      <div className="mt-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+      <div className="mt-8 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
         <form className="premium-card grid gap-3 p-5 text-zinc-950" action={savePromotion}>
           <h2 className="text-2xl font-black">Central Content Manager</h2>
           <label className="flex gap-2 font-bold"><input name="enabled" type="checkbox" defaultChecked={store.settings.magneetoz.enabled} /> Show offer on website</label>
@@ -1124,10 +1223,47 @@ function MagneetozManager({ store, patchStore }: { store: Store; patchStore: (pa
         </form>
         <div>
           <MagneetozBanner settings={store.settings} pgSourceId={pgSourceId} />
+          <form className="premium-card mt-6 grid gap-3 p-5 text-zinc-950" action={saveConnectedPg}>
+            <h2 className="text-2xl font-black">Add / Update PG Website</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <input name="pgName" className="field" placeholder="PG name, e.g. AP Boys Hostel" />
+              <input name="sourceId" className="field" placeholder="PG source code, e.g. APBOYS" />
+              <input name="couponCode" className="field" placeholder="Magneetoz coupon, e.g. APBOYS50" />
+              <input name="websiteUrl" className="field" placeholder="PG website URL" />
+              <input name="adminEmail" className="field" placeholder="PG admin email" />
+              <select name="status" className="field" defaultValue="active">
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+              </select>
+            </div>
+            <textarea name="notes" className="field" placeholder="Internal note: owner, area, deal details..." />
+            <button className="btn btn-dark">Save PG Control</button>
+          </form>
           <div className="premium-card mt-6 p-5 text-zinc-950">
             <h2 className="text-2xl font-black">Connected PG Websites</h2>
             <div className="mt-3 grid gap-3">
-              {byPg.map((site) => <div key={site.id} className="rounded-lg border border-black/10 p-3"><strong>{site.name}</strong><p className="text-sm text-zinc-500">Source: {site.sourceId} | Clicks {site.clicks} | Orders {site.orders} | Revenue {money(site.revenue)}</p></div>)}
+              {byPg.map((site) => {
+                const coupon = site.couponCode || store.settings.magneetoz.pgCoupons?.[site.sourceId] || `${store.settings.magneetoz.referralCodePrefix}-${site.sourceId}`;
+                const magneetozLink = `${store.settings.magneetoz.websiteLink}?pg=${encodeURIComponent(site.sourceId)}&coupon=${encodeURIComponent(coupon)}&pgName=${encodeURIComponent(site.name)}`;
+                return (
+                  <div key={site.id || site.sourceId} className="rounded-xl border border-black/10 bg-white/70 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <strong>{site.name}</strong>
+                        <p className="text-sm text-zinc-500">Source: {site.sourceId} | Coupon: {coupon} | Status: {site.status || "active"}</p>
+                        {site.websiteUrl && <p className="text-sm text-zinc-500">PG site: {site.websiteUrl}</p>}
+                      </div>
+                      <a className="btn btn-light" href={magneetozLink} target="_blank" rel="noreferrer">Test Link</a>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+                      <span className="rounded-lg bg-zinc-100 p-2">Clicks <b>{site.clicks}</b></span>
+                      <span className="rounded-lg bg-zinc-100 p-2">Orders <b>{site.orders}</b></span>
+                      <span className="rounded-lg bg-zinc-100 p-2">Revenue <b>{money(site.revenue)}</b></span>
+                    </div>
+                    <p className="mt-3 break-all rounded-lg bg-zinc-950 p-3 text-xs font-bold text-amber-100">{magneetozLink}</p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1450,6 +1586,33 @@ function parsePgCoupons(value: string) {
   }, {});
 }
 
+function normalizeStudentFromFirebase(id: string, data: Record<string, unknown>): Student {
+  const student = data as Partial<Student>;
+  return {
+    id,
+    studentId: student.studentId || `STU-${id.slice(0, 6).toUpperCase()}`,
+    fullName: student.fullName || "Student",
+    fatherName: student.fatherName || "",
+    phone: student.phone || "",
+    email: student.email || "",
+    aadhaar: student.aadhaar || "",
+    address: student.address || "",
+    joiningDate: student.joiningDate || todayIso(),
+    roomNumber: student.roomNumber || "",
+    bedNumber: student.bedNumber || "",
+    roomType: student.roomType || "Single Seater",
+    accommodationType: student.accommodationType || "Non AC",
+    rentAmount: Number(student.rentAmount || 0),
+    securityAmount: Number(student.securityAmount || 0),
+    paidAmount: Number(student.paidAmount || 0),
+    dueDate: student.dueDate || nextBillingDate(student.joiningDate || todayIso()),
+    paymentHistory: student.paymentHistory || [],
+    alerts: student.alerts || [],
+    status: student.status || "Active",
+    exitDate: student.exitDate
+  };
+}
+
 function normalizeStore(saved: Partial<Store>): Store {
   const savedSettings: Partial<SiteSettings> = saved.settings || {};
   const migratedPgName = savedSettings.pgName === "Imperial PG" ? seedStore.settings.pgName : savedSettings.pgName;
@@ -1467,7 +1630,10 @@ function normalizeStore(saved: Partial<Store>): Store {
         ...(savedSettings.foodTimetable || {})
       }
     },
-    students: (saved.students || seedStore.students).map((student) => ({ ...student, status: student.status || "Active" })),
+    students: (saved.students || seedStore.students).map((student) => {
+      const { password: _password, ...safeStudent } = student;
+      return { ...safeStudent, status: student.status || "Active" };
+    }),
     notices: saved.notices || seedStore.notices,
     complaints: saved.complaints || seedStore.complaints,
     rooms: saved.rooms || seedStore.rooms,

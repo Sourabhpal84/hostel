@@ -40,7 +40,22 @@ export function listenMagneetozEvents(callback: (events: MagneetozReferralEvent[
   }, () => undefined);
 }
 
+export function listenConnectedPgSites(callback: (sites: ConnectedPgSite[]) => void) {
+  if (!db) return () => undefined;
+  return onSnapshot(query(collection(db, magneetozCollections.connectedSites), orderBy("updatedAt", "desc")), (snapshot) => {
+    callback(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }) as ConnectedPgSite));
+  }, () => undefined);
+}
+
 export async function registerConnectedPgSite(site: ConnectedPgSite) {
   if (!db) throw new Error("Firebase is not configured.");
-  await setDoc(doc(db, magneetozCollections.connectedSites, site.sourceId), site, { merge: true });
+  const now = new Date().toISOString();
+  await setDoc(doc(db, magneetozCollections.connectedSites, site.sourceId), {
+    ...site,
+    id: site.id || site.sourceId,
+    sourceId: site.sourceId,
+    status: site.status || "active",
+    createdAt: site.createdAt || now,
+    updatedAt: now
+  }, { merge: true });
 }

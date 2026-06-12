@@ -110,6 +110,13 @@ export type ConnectedPgSite = {
   id: string;
   name: string;
   sourceId: string;
+  websiteUrl?: string;
+  adminEmail?: string;
+  couponCode?: string;
+  status?: "active" | "paused";
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type PaymentMode = "Cash" | "UPI" | "Bank Transfer" | "Card" | "Razorpay";
